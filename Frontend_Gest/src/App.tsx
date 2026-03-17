@@ -1,11 +1,17 @@
 ﻿import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Eye, EyeOff, Lock, User } from 'lucide-react'
+import axios from 'axios'
 import './App.css'
 
 interface LoginFormData {
   username: string
   password: string
+}
+
+interface LoginResponse {
+  message: string
+  token: string
 }
 
 function App() {
@@ -14,15 +20,32 @@ function App() {
     password: '',
   })
   const [showPassword, setShowPassword] = useState(false)
+  const [statusMessage, setStatusMessage] = useState('')
+  const [errorMessage, setErrorMessage] = useState('')
 
   const handleChange = (field: keyof LoginFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    // Aqui podrias conectar con tu API de autenticacion
-    // console.log(formData)
+    setStatusMessage('')
+    setErrorMessage('')
+
+    try {
+      const response = await axios.post<LoginResponse>(
+        'http://localhost:4000/api/login',
+        {
+          usuario: formData.username,
+          password: formData.password,
+        }
+      )
+
+      localStorage.setItem('token', response.data.token)
+      setStatusMessage('Bienvenido')
+    } catch (error) {
+      setErrorMessage('Credenciales incorrectas')
+    }
   }
 
   return (
@@ -76,6 +99,9 @@ function App() {
               Iniciar Sesion
             </button>
           </form>
+
+          {statusMessage ? <p className="status-text success">{statusMessage}</p> : null}
+          {errorMessage ? <p className="status-text error">{errorMessage}</p> : null}
 
           <button type="button" className="link-btn">
             Olvide mi contrasena

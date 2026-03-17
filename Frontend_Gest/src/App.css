@@ -180,6 +180,20 @@ body {
   color: var(--muted);
 }
 
+.status-text {
+  margin: 12px 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.status-text.success {
+  color: #166534;
+}
+
+.status-text.error {
+  color: #b91c1c;
+}
+
 @media (max-width: 480px) {
   .login-card {
     padding: 56px 24px 28px;
