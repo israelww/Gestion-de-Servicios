@@ -40,7 +40,7 @@ CREATE TABLE Usuarios (
     id_rol char(10) REFERENCES Roles(id_rol)
 );
 
--- 4. Elementos de Configuración (El núcleo)
+-- 4. Elementos de Configuraciï¿½n (El nï¿½cleo)
 CREATE TABLE Elementos_Configuracion (
     id_ci char(10) PRIMARY KEY,
     numero_serie VARCHAR(50) UNIQUE NOT NULL,

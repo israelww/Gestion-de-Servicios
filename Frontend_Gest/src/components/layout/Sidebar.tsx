@@ -1,15 +1,44 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ComponentType, SVGProps } from "react";
 import { FilePlus, Home } from "lucide-react";
 
-type Vista = "dashboard" | "nuevo-reporte";
+type IconType = ComponentType<SVGProps<SVGSVGElement>>;
 
-interface SidebarProps {
-  activeView: Vista;
-  onNavigate: (view: Vista) => void;
+export interface SidebarNavItem {
+  id: string;
+  label: string;
+  icon: IconType;
 }
 
-export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
-  const getNavStyle = (vista: Vista): CSSProperties => ({
+export interface SidebarNavGroup {
+  id: string;
+  label?: string;
+  items: SidebarNavItem[];
+}
+
+interface SidebarProps {
+  activeView: string;
+  onNavigate: (view: string) => void;
+  groups?: SidebarNavGroup[];
+  headingLines?: [string, string?];
+}
+
+const defaultGroups: SidebarNavGroup[] = [
+  {
+    id: "principal",
+    items: [
+      { id: "dashboard", label: "Inicio", icon: Home },
+      { id: "nuevo-reporte", label: "Nuevo Reporte", icon: FilePlus },
+    ],
+  },
+];
+
+export default function Sidebar({
+  activeView,
+  onNavigate,
+  groups = defaultGroups,
+  headingLines = ["Taller de Reparacion y", "Mantenimiento Tec"],
+}: SidebarProps) {
+  const getNavStyle = (vista: string): CSSProperties => ({
     display: "flex",
     width: "100%",
     alignItems: "center",
@@ -49,25 +78,46 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
             />
           </div>
           <p className="mt-4 text-base font-semibold uppercase tracking-wide text-slate-100/90">
-            Taller de Reparación y
+            {headingLines[0]}
           </p>
-          <p className="text-base font-semibold uppercase tracking-wide text-slate-100/90">
-            Mantenimiento Tec
-          </p>
+          {headingLines[1] ? (
+            <p className="text-base font-semibold uppercase tracking-wide text-slate-100/90">
+              {headingLines[1]}
+            </p>
+          ) : null}
         </div>
 
         <nav
           className="text-sm text-slate-200"
-          style={{ display: "flex", flexDirection: "column", gap: "0", marginTop: "40px" }}
+          style={{ display: "flex", flexDirection: "column", gap: "20px", marginTop: "40px" }}
         >
-          <button type="button" style={getNavStyle("dashboard")} onClick={() => onNavigate("dashboard")}>
-            <Home className="h-5 w-5" />
-            Inicio
-          </button>
-          <button type="button" style={getNavStyle("nuevo-reporte")} onClick={() => onNavigate("nuevo-reporte")}>
-            <FilePlus className="h-5 w-5" />
-            Nuevo Reporte
-          </button>
+          {groups.map((group) => (
+            <div key={group.id} className="flex flex-col gap-2">
+              {group.label ? (
+                <p className="px-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-300/80">
+                  {group.label}
+                </p>
+              ) : null}
+
+              <div className="flex flex-col gap-1">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      style={getNavStyle(item.id)}
+                      onClick={() => onNavigate(item.id)}
+                    >
+                      <Icon className="h-5 w-5" />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
       </div>
     </aside>
