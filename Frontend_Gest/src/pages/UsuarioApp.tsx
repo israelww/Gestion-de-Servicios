@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import NuevoReporte from '../NuevoReporte';
-import UserDashboard from '../UserDashboard';
+import NuevoReporte from './reportes/NuevoReporte';
+import UserDashboard from './dashboard/UserDashboard';
 
 type Vista = 'dashboard' | 'nuevo-reporte';
 
