@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Home, MapPin, User } from "lucide-react";
 import Sidebar from "../../components/layout/Sidebar";
+import { usuarioSidebarGroups, type UsuarioView } from "../usuarioNavigation";
 
 interface OptionItem {
   id: string;
@@ -14,11 +15,9 @@ interface NuevoReporteForm {
   descripcion: string;
 }
 
-type Vista = "dashboard" | "nuevo-reporte";
-
 interface NuevoReporteProps {
-  activeView: Vista;
-  onNavigate: (view: Vista) => void;
+  activeView: UsuarioView;
+  onNavigate: (view: UsuarioView) => void;
 }
 
 export default function NuevoReporte({ activeView, onNavigate }: NuevoReporteProps) {
@@ -114,7 +113,7 @@ export default function NuevoReporte({ activeView, onNavigate }: NuevoReportePro
       <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.45)" }} />
 
       <div className="relative z-10 flex min-h-screen">
-        <Sidebar activeView={activeView} onNavigate={onNavigate} />
+        <Sidebar activeView={activeView} onNavigate={onNavigate} groups={usuarioSidebarGroups} />
 
         <main
           className="flex-1"

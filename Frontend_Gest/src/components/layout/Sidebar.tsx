@@ -1,12 +1,7 @@
-<<<<<<< HEAD
 import type { CSSProperties, ComponentType, SVGProps } from "react";
-import { FilePlus, Home } from "lucide-react";
-=======
-import type { CSSProperties } from "react";
 import { FilePlus, Home, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { clearAuth } from "./auth/storage";
->>>>>>> 5fdced8c4a5df6deb4ffd8a853801e8bcf7dd48a
+import { clearAuth } from "../../auth/storage";
 
 type IconType = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -16,7 +11,6 @@ export interface SidebarNavItem {
   icon: IconType;
 }
 
-<<<<<<< HEAD
 export interface SidebarNavGroup {
   id: string;
   label?: string;
@@ -46,12 +40,9 @@ export default function Sidebar({
   groups = defaultGroups,
   headingLines = ["Taller de Reparacion y", "Mantenimiento Tec"],
 }: SidebarProps) {
-  const getNavStyle = (vista: string): CSSProperties => ({
-=======
-export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
   const navigate = useNavigate();
-  const getNavStyle = (vista: Vista): CSSProperties => ({
->>>>>>> 5fdced8c4a5df6deb4ffd8a853801e8bcf7dd48a
+
+  const getNavStyle = (vista: string): CSSProperties => ({
     display: "flex",
     width: "100%",
     alignItems: "center",
@@ -158,7 +149,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
         <div style={{ marginTop: "auto" }}>
           <button type="button" style={logoutStyle} onClick={handleLogout}>
             <LogOut className="h-5 w-5" />
-            Cerrar sesión
+            Cerrar sesion
           </button>
         </div>
       </div>

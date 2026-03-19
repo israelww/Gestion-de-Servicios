@@ -1,5 +1,6 @@
 import { Eye } from "lucide-react";
 import Sidebar from "../../components/layout/Sidebar";
+import { usuarioSidebarGroups, type UsuarioView } from "../usuarioNavigation";
 
 interface Ticket {
   folio: string;
@@ -47,11 +48,9 @@ function getEstadoClasses(estado: Ticket["estado"]) {
   return "bg-emerald-100 text-emerald-800";
 }
 
-type Vista = "dashboard" | "nuevo-reporte";
-
 interface UserDashboardProps {
-  activeView: Vista;
-  onNavigate: (view: Vista) => void;
+  activeView: UsuarioView;
+  onNavigate: (view: UsuarioView) => void;
 }
 
 export default function UserDashboard({ activeView, onNavigate }: UserDashboardProps) {
@@ -71,7 +70,7 @@ export default function UserDashboard({ activeView, onNavigate }: UserDashboardP
       <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.45)" }} />
 
       <div className="relative z-10 flex min-h-screen">
-        <Sidebar activeView={activeView} onNavigate={onNavigate} />
+        <Sidebar activeView={activeView} onNavigate={onNavigate} groups={usuarioSidebarGroups} />
 
         <main
           className="flex-1"
