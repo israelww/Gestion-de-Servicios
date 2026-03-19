@@ -1,5 +1,5 @@
 import { Eye } from "lucide-react";
-import Sidebar from "./Sidebar";
+import Sidebar from "../../components/layout/Sidebar";
 
 interface Ticket {
   folio: string;
@@ -14,26 +14,26 @@ const tickets: Ticket[] = [
     folio: "3200130",
     equipo: "Laptop Dell G15",
     ubicacion: "Oficina Norte",
-    tecnico: "Ing. Ramírez",
+    tecnico: "Ing. Ramï¿½rez",
     estado: "En Proceso",
   },
   {
     folio: "3200122",
     equipo: "Impresora HP 404",
-    ubicacion: "Almacén",
-    tecnico: "Tec. López",
+    ubicacion: "Almacï¿½n",
+    tecnico: "Tec. Lï¿½pez",
     estado: "Resuelto",
   },
   {
     folio: "3200118",
     equipo: "PC Lenovo M720",
-    ubicacion: "Recepción",
+    ubicacion: "Recepciï¿½n",
     tecnico: "Ing. Torres",
     estado: "En Proceso",
   },
   {
     folio: "3200105",
-    equipo: "Monitor Samsung 27”",
+    equipo: "Monitor Samsung 27ï¿½",
     ubicacion: "Sala de Juntas",
     tecnico: "Tec. Vargas",
     estado: "Resuelto",
@@ -92,10 +92,10 @@ export default function UserDashboard({ activeView, onNavigate }: UserDashboardP
                   <tr>
                     <th className="px-4 py-3">Folio</th>
                     <th className="px-4 py-3">Equipo</th>
-                    <th className="px-4 py-3">Ubicación</th>
-                    <th className="px-4 py-3">Técnico</th>
+                    <th className="px-4 py-3">Ubicaciï¿½n</th>
+                    <th className="px-4 py-3">Tï¿½cnico</th>
                     <th className="px-4 py-3">Estado</th>
-                    <th className="pl-6 pr-8 py-3 text-left">Acción</th>
+                    <th className="pl-6 pr-8 py-3 text-left">Acciï¿½n</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white">

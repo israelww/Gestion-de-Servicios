@@ -1,8 +1,10 @@
 {
   "dependencies": {
-    "concurrently": "^9.2.1"
+    "antd": "^6.3.3",
+    "concurrently": "^9.2.1",
+    "react-router-dom": "^7.13.1"
   },
   "scripts": {
-  "dev": "concurrently \"npm run dev --prefix Backend_Gest\" \"npm run dev --prefix Frontend_Gest\""
-}
+    "dev": "concurrently \"npm run dev --prefix Backend_Gest\" \"npm run dev --prefix Frontend_Gest\""
+  }
 }
