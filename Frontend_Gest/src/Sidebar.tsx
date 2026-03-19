@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
-import { FilePlus, Home } from "lucide-react";
+import { FilePlus, Home, LogOut } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { clearAuth } from "./auth/storage";
 
 type Vista = "dashboard" | "nuevo-reporte";
 
@@ -9,6 +11,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
+  const navigate = useNavigate();
   const getNavStyle = (vista: Vista): CSSProperties => ({
     display: "flex",
     width: "100%",
@@ -32,6 +35,28 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
           color: "#cbd5e1",
         }),
   });
+
+  const logoutStyle: CSSProperties = {
+    display: "flex",
+    width: "100%",
+    alignItems: "center",
+    gap: "16px",
+    borderRadius: "8px",
+    padding: "12px 16px",
+    textAlign: "left",
+    cursor: "pointer",
+    border: "none",
+    transition: "all 0.2s",
+    background: "rgba(15, 23, 42, 0.55)",
+    color: "#ffffff",
+    fontWeight: 600,
+    marginTop: "16px",
+  };
+
+  const handleLogout = () => {
+    clearAuth();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <aside className="w-[250px] backdrop-blur-xl" style={{ background: "rgba(120,120,120,0.35)" }}>
@@ -69,6 +94,13 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
             Nuevo Reporte
           </button>
         </nav>
+
+        <div style={{ marginTop: "auto" }}>
+          <button type="button" style={logoutStyle} onClick={handleLogout}>
+            <LogOut className="h-5 w-5" />
+            Cerrar sesión
+          </button>
+        </div>
       </div>
     </aside>
   );
