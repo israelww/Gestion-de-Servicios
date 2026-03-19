@@ -89,64 +89,69 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="w-[250px] backdrop-blur-xl" style={{ background: "rgba(120,120,120,0.35)" }}>
-      <div className="flex h-full flex-col px-6 py-8">
-        <div className="flex flex-col items-center pb-6 text-center" style={{ paddingTop: "48px" }}>
-          <div
-            className="shrink-0 overflow-hidden rounded-full bg-slate-700/70 ring-2 ring-white/30"
-            style={{ width: 64, height: 64 }}
-          >
-            <img
-              src="/images/logo.png"
-              alt="Logo"
-              className="block rounded-full object-cover"
-              style={{ width: "100%", height: "100%", maxWidth: "100%", maxHeight: "100%" }}
-            />
-          </div>
-          <p className="mt-4 text-base font-semibold uppercase tracking-wide text-slate-100/90">
-            {headingLines[0]}
-          </p>
-          {headingLines[1] ? (
-            <p className="text-base font-semibold uppercase tracking-wide text-slate-100/90">
-              {headingLines[1]}
+    <aside
+      className="fixed left-0 top-0 z-20 h-screen w-[250px] backdrop-blur-xl"
+      style={{ background: "rgba(120,120,120,0.35)" }}
+    >
+      <div className="flex h-screen flex-col justify-between px-6 py-8">
+        <div className="flex flex-1 flex-col">
+          <div className="flex flex-col items-center pb-6 text-center" style={{ paddingTop: "48px" }}>
+            <div
+              className="shrink-0 overflow-hidden rounded-full bg-slate-700/70 ring-2 ring-white/30"
+              style={{ width: 64, height: 64 }}
+            >
+              <img
+                src="/images/logo.png"
+                alt="Logo"
+                className="block rounded-full object-cover"
+                style={{ width: "100%", height: "100%", maxWidth: "100%", maxHeight: "100%" }}
+              />
+            </div>
+            <p className="mt-4 text-base font-semibold uppercase tracking-wide text-slate-100/90">
+              {headingLines[0]}
             </p>
-          ) : null}
+            {headingLines[1] ? (
+              <p className="text-base font-semibold uppercase tracking-wide text-slate-100/90">
+                {headingLines[1]}
+              </p>
+            ) : null}
+          </div>
+
+          <nav
+            className="flex flex-1 flex-col gap-5 pt-10 text-sm text-slate-200"
+            aria-label="Navegacion principal"
+          >
+            {groups.map((group) => (
+              <div key={group.id} className="flex flex-col gap-2">
+                {group.label ? (
+                  <p className="px-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-300/80">
+                    {group.label}
+                  </p>
+                ) : null}
+
+                <div className="flex flex-col gap-1">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        style={getNavStyle(item.id)}
+                        onClick={() => onNavigate(item.id)}
+                      >
+                        <Icon className="h-5 w-5" />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </nav>
         </div>
 
-        <nav
-          className="text-sm text-slate-200"
-          style={{ display: "flex", flexDirection: "column", gap: "20px", marginTop: "40px" }}
-        >
-          {groups.map((group) => (
-            <div key={group.id} className="flex flex-col gap-2">
-              {group.label ? (
-                <p className="px-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-300/80">
-                  {group.label}
-                </p>
-              ) : null}
-
-              <div className="flex flex-col gap-1">
-                {group.items.map((item) => {
-                  const Icon = item.icon;
-
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      style={getNavStyle(item.id)}
-                      onClick={() => onNavigate(item.id)}
-                    >
-                      <Icon className="h-5 w-5" />
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        <div style={{ marginTop: "auto" }}>
+        <div className="mt-auto pt-4">
           <button type="button" style={logoutStyle} onClick={handleLogout}>
             <LogOut className="h-5 w-5" />
             Cerrar sesion
