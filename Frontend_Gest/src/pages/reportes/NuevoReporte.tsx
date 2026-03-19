@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Home, MapPin, User } from "lucide-react";
-import Sidebar from "./Sidebar";
+import Sidebar from "../../components/layout/Sidebar";
 
 interface OptionItem {
   id: string;
