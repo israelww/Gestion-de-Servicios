@@ -1,5 +1,12 @@
+<<<<<<< HEAD
 import type { CSSProperties, ComponentType, SVGProps } from "react";
 import { FilePlus, Home } from "lucide-react";
+=======
+import type { CSSProperties } from "react";
+import { FilePlus, Home, LogOut } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { clearAuth } from "./auth/storage";
+>>>>>>> 5fdced8c4a5df6deb4ffd8a853801e8bcf7dd48a
 
 type IconType = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -9,6 +16,7 @@ export interface SidebarNavItem {
   icon: IconType;
 }
 
+<<<<<<< HEAD
 export interface SidebarNavGroup {
   id: string;
   label?: string;
@@ -39,6 +47,11 @@ export default function Sidebar({
   headingLines = ["Taller de Reparacion y", "Mantenimiento Tec"],
 }: SidebarProps) {
   const getNavStyle = (vista: string): CSSProperties => ({
+=======
+export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
+  const navigate = useNavigate();
+  const getNavStyle = (vista: Vista): CSSProperties => ({
+>>>>>>> 5fdced8c4a5df6deb4ffd8a853801e8bcf7dd48a
     display: "flex",
     width: "100%",
     alignItems: "center",
@@ -61,6 +74,28 @@ export default function Sidebar({
           color: "#cbd5e1",
         }),
   });
+
+  const logoutStyle: CSSProperties = {
+    display: "flex",
+    width: "100%",
+    alignItems: "center",
+    gap: "16px",
+    borderRadius: "8px",
+    padding: "12px 16px",
+    textAlign: "left",
+    cursor: "pointer",
+    border: "none",
+    transition: "all 0.2s",
+    background: "rgba(15, 23, 42, 0.55)",
+    color: "#ffffff",
+    fontWeight: 600,
+    marginTop: "16px",
+  };
+
+  const handleLogout = () => {
+    clearAuth();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <aside className="w-[250px] backdrop-blur-xl" style={{ background: "rgba(120,120,120,0.35)" }}>
@@ -119,6 +154,13 @@ export default function Sidebar({
             </div>
           ))}
         </nav>
+
+        <div style={{ marginTop: "auto" }}>
+          <button type="button" style={logoutStyle} onClick={handleLogout}>
+            <LogOut className="h-5 w-5" />
+            Cerrar sesión
+          </button>
+        </div>
       </div>
     </aside>
   );
