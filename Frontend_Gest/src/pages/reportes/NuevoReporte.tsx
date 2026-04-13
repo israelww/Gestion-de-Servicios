@@ -1,5 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Home, MapPin, User } from "lucide-react";
+import axios from "axios";
+import { getToken } from "../../auth/storage";
+
+const API_BASE_URL = "http://localhost:4000/api";
 
 interface OptionItem {
   id: string;
@@ -17,8 +21,13 @@ export default function NuevoReporte() {
   const [edificios, setEdificios] = useState<OptionItem[]>([]);
   const [sublocalizaciones, setSublocalizaciones] = useState<OptionItem[]>([]);
   const [equipos, setEquipos] = useState<OptionItem[]>([]);
-  const [loadingOptions, setLoadingOptions] = useState(true);
+  const [loadingEdificios, setLoadingEdificios] = useState(true);
+  const [loadingSublocalizaciones, setLoadingSublocalizaciones] = useState(false);
+  const [loadingEquipos, setLoadingEquipos] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<NuevoReporteForm>({
     edificio: "",
     sublocalizacion: "",
@@ -26,59 +35,79 @@ export default function NuevoReporte() {
     descripcion: "",
   });
 
+  const headers = () => {
+    const token = getToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const getApiErrorMessage = (error: unknown, fallback: string) => {
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.message;
+      if (typeof message === "string" && message.trim()) return message;
+      const status = error.response?.status;
+      if (status === 401 || status === 403) return "No autorizado";
+    }
+    return fallback;
+  };
+
   const handleChange = (field: keyof NuevoReporteForm, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setSubmitError(null);
+    setStatusMessage(null);
+    setSubmitting(true);
+    try {
+      await axios.post(
+        `${API_BASE_URL}/reportes`,
+        {
+          id_edificio: formData.edificio,
+          id_sublocalizacion: formData.sublocalizacion,
+          id_ci: formData.equipoId,
+          descripcion_falla: formData.descripcion,
+        },
+        { headers: headers() }
+      );
+      setFormData({
+        edificio: "",
+        sublocalizacion: "",
+        equipoId: "",
+        descripcion: "",
+      });
+      setSublocalizaciones([]);
+      setEquipos([]);
+      setStatusMessage("Reporte creado correctamente.");
+    } catch (error) {
+      setSubmitError(getApiErrorMessage(error, "No se pudo crear el reporte."));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   useEffect(() => {
     let isMounted = true;
 
-    const fetchEdificios = async (): Promise<OptionItem[]> =>
-      Promise.resolve([
-        { id: "ED-001", label: "Edificio A" },
-        { id: "ED-002", label: "Edificio B" },
-        { id: "ED-003", label: "Edificio C" },
-      ]);
-
-    const fetchSublocalizaciones = async (): Promise<OptionItem[]> =>
-      Promise.resolve([
-        { id: "SL-101", label: "Salon 101" },
-        { id: "SL-204", label: "Salon 204" },
-        { id: "SL-305", label: "Salon 305" },
-      ]);
-
-    const fetchEquipos = async (): Promise<OptionItem[]> =>
-      Promise.resolve([
-        { id: "EQ-001", label: "Proyector Epson" },
-        { id: "EQ-002", label: "Laptop Dell G15" },
-        { id: "EQ-003", label: "Impresora HP 404" },
-      ]);
-
     const loadOptions = async () => {
       try {
-        setLoadingOptions(true);
+        setLoadingEdificios(true);
         setLoadError(null);
-        const [edificiosData, sublocalizacionesData, equiposData] = await Promise.all([
-          fetchEdificios(),
-          fetchSublocalizaciones(),
-          fetchEquipos(),
-        ]);
+        const response = await axios.get(`${API_BASE_URL}/edificios`, { headers: headers() });
+        const edificiosData = (response.data || []).map((item: { id_edificio: string; nombre_edificio: string }) => ({
+          id: item.id_edificio,
+          label: item.nombre_edificio,
+        }));
         if (isMounted) {
           setEdificios(edificiosData);
-          setSublocalizaciones(sublocalizacionesData);
-          setEquipos(equiposData);
         }
       } catch (error) {
         if (isMounted) {
-          setLoadError("No se pudieron cargar las opciones del formulario.");
+          setLoadError(getApiErrorMessage(error, "No se pudieron cargar los edificios."));
         }
       } finally {
         if (isMounted) {
-          setLoadingOptions(false);
+          setLoadingEdificios(false);
         }
       }
     };
@@ -89,6 +118,96 @@ export default function NuevoReporte() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadSublocalizaciones = async () => {
+      if (!formData.edificio) {
+        setSublocalizaciones([]);
+        setFormData((prev) => ({ ...prev, sublocalizacion: "", equipoId: "" }));
+        return;
+      }
+
+      try {
+        setLoadingSublocalizaciones(true);
+        setLoadError(null);
+        const response = await axios.get(
+          `${API_BASE_URL}/edificios/${formData.edificio}/sublocalizaciones`,
+          { headers: headers() }
+        );
+        const data = (response.data || []).map(
+          (item: { id_sublocalizacion: string; nombre_sublocalizacion: string }) => ({
+            id: item.id_sublocalizacion,
+            label: item.nombre_sublocalizacion,
+          })
+        );
+        if (isMounted) {
+          setSublocalizaciones(data);
+          setFormData((prev) => ({ ...prev, sublocalizacion: "", equipoId: "" }));
+        }
+      } catch (error) {
+        if (isMounted) {
+          setLoadError(getApiErrorMessage(error, "No se pudieron cargar las sublocalizaciones."));
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingSublocalizaciones(false);
+        }
+      }
+    };
+
+    void loadSublocalizaciones();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [formData.edificio]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadEquipos = async () => {
+      if (!formData.sublocalizacion) {
+        setEquipos([]);
+        setFormData((prev) => ({ ...prev, equipoId: "" }));
+        return;
+      }
+
+      try {
+        setLoadingEquipos(true);
+        setLoadError(null);
+        const response = await axios.get(
+          `${API_BASE_URL}/sublocalizaciones/${formData.sublocalizacion}/ci`,
+          { headers: headers() }
+        );
+        const data = (response.data || []).map(
+          (item: { id_ci: string; nombre_equipo: string | null; numero_serie: string }) => ({
+            id: item.id_ci,
+            label: `${item.id_ci} - ${item.nombre_equipo || item.numero_serie || "Sin nombre"}`,
+          })
+        );
+        if (isMounted) {
+          setEquipos(data);
+          setFormData((prev) => ({ ...prev, equipoId: "" }));
+        }
+      } catch (error) {
+        if (isMounted) {
+          setLoadError(getApiErrorMessage(error, "No se pudieron cargar los equipos."));
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingEquipos(false);
+        }
+      }
+    };
+
+    void loadEquipos();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [formData.sublocalizacion]);
 
   return (
     <section
@@ -110,10 +229,10 @@ export default function NuevoReporte() {
                     onChange={(event) => handleChange("edificio", event.target.value)}
                     className="w-full rounded-xl border border-gray-300 bg-white py-4 pl-12 pr-4 text-sm text-gray-700 outline-none transition focus:border-transparent focus:ring-2 focus:ring-blue-900"
                     required
-                    disabled={loadingOptions || Boolean(loadError)}
+                    disabled={loadingEdificios || Boolean(loadError)}
                   >
                     <option value="" disabled>
-                      {loadingOptions ? "Cargando..." : "Selecciona un edificio"}
+                      {loadingEdificios ? "Cargando..." : "Selecciona un edificio"}
                     </option>
                     {edificios.map((edificio) => (
                       <option key={edificio.id} value={edificio.id}>
@@ -133,10 +252,10 @@ export default function NuevoReporte() {
                     onChange={(event) => handleChange("sublocalizacion", event.target.value)}
                     className="w-full rounded-xl border border-gray-300 bg-white py-4 pl-12 pr-4 text-sm text-gray-700 outline-none transition focus:border-transparent focus:ring-2 focus:ring-blue-900"
                     required
-                    disabled={loadingOptions || Boolean(loadError)}
+                    disabled={!formData.edificio || loadingSublocalizaciones || Boolean(loadError)}
                   >
                     <option value="" disabled>
-                      {loadingOptions ? "Cargando..." : "Selecciona una sublocalizacion"}
+                      {loadingSublocalizaciones ? "Cargando..." : "Selecciona una sublocalizacion"}
                     </option>
                     {sublocalizaciones.map((item) => (
                       <option key={item.id} value={item.id}>
@@ -156,10 +275,10 @@ export default function NuevoReporte() {
                     onChange={(event) => handleChange("equipoId", event.target.value)}
                     className="w-full rounded-xl border border-gray-300 bg-white py-4 pl-12 pr-4 text-sm text-gray-700 outline-none transition focus:border-transparent focus:ring-2 focus:ring-blue-900"
                     required
-                    disabled={loadingOptions || Boolean(loadError)}
+                    disabled={!formData.sublocalizacion || loadingEquipos || Boolean(loadError)}
                   >
                     <option value="" disabled>
-                      {loadingOptions ? "Cargando..." : "Selecciona un equipo"}
+                      {loadingEquipos ? "Cargando..." : "Selecciona un equipo"}
                     </option>
                     {equipos.map((equipo) => (
                       <option key={equipo.id} value={equipo.id}>
@@ -181,6 +300,18 @@ export default function NuevoReporte() {
                 />
               </div>
 
+              {statusMessage ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  {statusMessage}
+                </div>
+              ) : null}
+
+              {submitError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {submitError}
+                </div>
+              ) : null}
+
               {loadError ? (
                 <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                   {loadError}
@@ -189,9 +320,10 @@ export default function NuevoReporte() {
 
               <button
                 type="submit"
-                className="w-full rounded-xl bg-[#001f3f] py-4 text-sm font-bold text-white shadow-md transition hover:bg-blue-800"
+                disabled={submitting || Boolean(loadError)}
+                className="w-full rounded-xl bg-[#001f3f] py-4 text-sm font-bold text-white shadow-md transition hover:bg-blue-800 disabled:opacity-70"
               >
-                Enviar Reporte
+                {submitting ? "Enviando..." : "Enviar Reporte"}
               </button>
             </form>
     </section>

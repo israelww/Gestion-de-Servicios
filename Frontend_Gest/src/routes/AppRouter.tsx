@@ -1,7 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import RequireAuth from '../auth/RequireAuth';
 import RequireRole from '../auth/RequireRole';
-import AdminDashboard from '../pages/AdminDashboard';
+import AdminApp from '../pages/AdminApp';
 import LoginPage from '../pages/LoginPage';
 import TecnicoDashboard from '../pages/TecnicoDashboard';
 import UsuarioApp from '../pages/UsuarioApp';
@@ -16,7 +16,7 @@ export default function AppRouter() {
         <Route path="/usuario/*" element={<UsuarioApp />} />
 
         <Route element={<RequireRole allow={['Administrador']} />}>
-          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/*" element={<AdminApp />} />
         </Route>
 
         <Route element={<RequireRole allow={['Tecnico']} />}>

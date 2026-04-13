@@ -133,6 +133,21 @@ function getJwtFromHeader(req) {
   return token
 }
 
+function requireAuth(req, res, next) {
+  const token = getJwtFromHeader(req)
+  if (!token) return res.status(401).json({ message: 'No autorizado' })
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET)
+    req.user = payload
+    return next()
+  } catch {
+    return res.status(401).json({ message: 'Token invalido' })
+  }
+}
+
+const requireAnyAuth = [requireAuth]
+
 app.get('/api/edificios', async (_req, res) => {
   try {
     const pool = await getPool()
@@ -304,6 +319,38 @@ app.post('/api/sublocalizaciones', async (req, res) => {
     })
   } catch (err) {
     console.error('Error en POST /api/sublocalizaciones:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.get('/api/sublocalizaciones/:id_sublocalizacion/ci', ...requireAnyAuth, async (req, res) => {
+  const id_sublocalizacion = toTrimmedString(req.params?.id_sublocalizacion)
+
+  if (!id_sublocalizacion) {
+    return badRequest(res, 'El id_sublocalizacion es obligatorio')
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) {
+      return res.status(500).json({ message: 'Backend sin configuración de BD' })
+    }
+
+    const result = await pool
+      .request()
+      .input('id_sublocalizacion', sql.Char(10), id_sublocalizacion)
+      .query(
+        `
+        SELECT id_ci, nombre_equipo, numero_serie
+        FROM Elementos_Configuracion
+        WHERE id_sublocalizacion = @id_sublocalizacion
+        ORDER BY id_ci
+        `
+      )
+
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/sublocalizaciones/:id_sublocalizacion/ci:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
   }
 })
@@ -569,6 +616,222 @@ app.post('/api/ci', async (req, res) => {
     }
 
     console.error('Error en POST /api/ci:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.post('/api/reportes', ...requireAnyAuth, async (req, res) => {
+  const payload = {
+    id_edificio: toTrimmedString(req.body?.id_edificio),
+    id_sublocalizacion: toTrimmedString(req.body?.id_sublocalizacion),
+    id_ci: toTrimmedString(req.body?.id_ci),
+    descripcion_falla: toTrimmedString(req.body?.descripcion_falla),
+  }
+
+  if (!payload.id_edificio || !payload.id_sublocalizacion || !payload.id_ci || !payload.descripcion_falla) {
+    return badRequest(
+      res,
+      'id_edificio, id_sublocalizacion, id_ci y descripcion_falla son obligatorios'
+    )
+  }
+
+  const pool = await getPool()
+  if (!pool) {
+    return res.status(500).json({ message: 'Backend sin configuración de BD' })
+  }
+
+  const transaction = new sql.Transaction(pool)
+  let transactionFinished = false
+
+  try {
+    await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE)
+    const request = new sql.Request(transaction)
+
+    const buildingExists = await existsById(
+      request,
+      'Edificios',
+      'id_edificio',
+      'id_edificio',
+      payload.id_edificio
+    )
+    if (!buildingExists) {
+      await transaction.rollback()
+      return res.status(404).json({ message: 'El edificio no existe' })
+    }
+
+    const subCheck = await new sql.Request(transaction)
+      .input('id_sublocalizacion', sql.Char(10), payload.id_sublocalizacion)
+      .query(
+        `
+        SELECT id_sublocalizacion, id_edificio
+        FROM Sublocalizaciones
+        WHERE id_sublocalizacion = @id_sublocalizacion
+        `
+      )
+
+    const sub = subCheck.recordset?.[0]
+    if (!sub) {
+      await transaction.rollback()
+      return res.status(404).json({ message: 'La sublocalizacion no existe' })
+    }
+    if (toTrimmedString(sub.id_edificio) !== payload.id_edificio) {
+      await transaction.rollback()
+      return res.status(409).json({ message: 'La sublocalizacion no pertenece al edificio' })
+    }
+
+    const ciCheck = await new sql.Request(transaction)
+      .input('id_ci', sql.VarChar(25), payload.id_ci)
+      .query(
+        `
+        SELECT id_ci, id_sublocalizacion
+        FROM Elementos_Configuracion
+        WHERE id_ci = @id_ci
+        `
+      )
+
+    const ci = ciCheck.recordset?.[0]
+    if (!ci) {
+      await transaction.rollback()
+      return res.status(404).json({ message: 'El CI no existe' })
+    }
+    if (toTrimmedString(ci.id_sublocalizacion) !== payload.id_sublocalizacion) {
+      await transaction.rollback()
+      return res.status(409).json({ message: 'El CI no pertenece a la sublocalizacion' })
+    }
+
+    const userId = req.user?.sub
+    await new sql.Request(transaction)
+      .input('id_edificio', sql.Char(10), payload.id_edificio)
+      .input('id_sublocalizacion', sql.Char(10), payload.id_sublocalizacion)
+      .input('id_ci', sql.VarChar(25), payload.id_ci)
+      .input('descripcion_falla', sql.VarChar(1000), payload.descripcion_falla)
+      .input('id_usuario_reporta', sql.Char(15), userId)
+      .query(
+        `
+        INSERT INTO Reportes (
+          id_edificio,
+          id_sublocalizacion,
+          id_ci,
+          descripcion_falla,
+          id_usuario_reporta
+        )
+        VALUES (
+          @id_edificio,
+          @id_sublocalizacion,
+          @id_ci,
+          @descripcion_falla,
+          @id_usuario_reporta
+        )
+        `
+      )
+
+    await transaction.commit()
+    transactionFinished = true
+
+    return res.status(201).json({ message: 'Reporte creado correctamente' })
+  } catch (err) {
+    if (!transactionFinished) {
+      try {
+        await transaction.rollback()
+      } catch {}
+    }
+    console.error('Error en POST /api/reportes:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.get('/api/reportes', ...requireAnyAuth, async (req, res) => {
+  const userId = req.user?.sub
+  if (!userId) return res.status(401).json({ message: 'No autorizado' })
+
+  try {
+    const pool = await getPool()
+    if (!pool) {
+      return res.status(500).json({ message: 'Backend sin configuración de BD' })
+    }
+
+    const result = await pool
+      .request()
+      .input('id_usuario_reporta', sql.Char(15), userId)
+      .query(
+        `
+        SELECT
+          r.id_reporte,
+          r.id_ci,
+          r.descripcion_falla,
+          r.fecha_reporte,
+          r.estado,
+          e.nombre_edificio,
+          s.nombre_sublocalizacion,
+          ci.nombre_equipo,
+          ci.numero_serie
+        FROM Reportes r
+        JOIN Edificios e ON e.id_edificio = r.id_edificio
+        JOIN Sublocalizaciones s ON s.id_sublocalizacion = r.id_sublocalizacion
+        LEFT JOIN Elementos_Configuracion ci ON ci.id_ci = r.id_ci
+        WHERE r.id_usuario_reporta = @id_usuario_reporta
+        ORDER BY r.fecha_reporte DESC, r.id_reporte DESC
+        `
+      )
+
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/reportes:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.get('/api/reportes/:id_reporte', ...requireAnyAuth, async (req, res) => {
+  const id_reporte = Number.parseInt(String(req.params?.id_reporte || ''), 10)
+  const userId = req.user?.sub
+
+  if (!userId) return res.status(401).json({ message: 'No autorizado' })
+  if (Number.isNaN(id_reporte)) {
+    return badRequest(res, 'El id_reporte es obligatorio')
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) {
+      return res.status(500).json({ message: 'Backend sin configuración de BD' })
+    }
+
+    const result = await pool
+      .request()
+      .input('id_reporte', sql.Int, id_reporte)
+      .input('id_usuario_reporta', sql.Char(15), userId)
+      .query(
+        `
+        SELECT
+          r.id_reporte,
+          r.id_edificio,
+          r.id_sublocalizacion,
+          r.id_ci,
+          r.descripcion_falla,
+          r.fecha_reporte,
+          r.estado,
+          e.nombre_edificio,
+          s.nombre_sublocalizacion,
+          ci.nombre_equipo,
+          ci.numero_serie,
+          u.nombre_completo AS usuario_reporta
+        FROM Reportes r
+        JOIN Edificios e ON e.id_edificio = r.id_edificio
+        JOIN Sublocalizaciones s ON s.id_sublocalizacion = r.id_sublocalizacion
+        LEFT JOIN Elementos_Configuracion ci ON ci.id_ci = r.id_ci
+        LEFT JOIN Usuarios u ON u.id_usuario = r.id_usuario_reporta
+        WHERE r.id_reporte = @id_reporte AND r.id_usuario_reporta = @id_usuario_reporta
+        `
+      )
+
+    const row = result.recordset?.[0]
+    if (!row) {
+      return res.status(404).json({ message: 'Reporte no encontrado' })
+    }
+
+    return res.status(200).json(row)
+  } catch (err) {
+    console.error('Error en GET /api/reportes/:id_reporte:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
   }
 })
