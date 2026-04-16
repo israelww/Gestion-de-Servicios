@@ -241,7 +241,7 @@ export default function ReporteDetalles() {
                 onClick={openValorarModal}
               >
                 <Star className="h-4 w-4" />
-                {reporte.calificacion_servicio ? "Editar Valoracion" : "Valorar Servicio"}
+                {reporte.calificacion_servicio ? "Editar Evaluación" : "Evaluar Servicio del Técnico"}
               </button>
             ) : null}
           </section>
@@ -260,7 +260,7 @@ export default function ReporteDetalles() {
           <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-xl font-bold text-slate-900">Valorar Servicio</h3>
+                <h3 className="text-xl font-bold text-slate-900">Evaluar Servicio del Técnico</h3>
                 <p className="text-sm text-slate-600">
                   Tecnico: {reporte.tecnico_asignado || "No asignado"}
                 </p>
@@ -316,7 +316,7 @@ export default function ReporteDetalles() {
               onClick={() => void submitValoracion()}
               className="mt-4 w-full rounded-xl bg-[#001f3f] py-3 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-70"
             >
-              {submittingValoracion ? "Guardando..." : "Guardar Valoracion"}
+              {submittingValoracion ? "Guardando..." : "Finalizar y Liberar Folio"}
             </button>
           </div>
         </div>

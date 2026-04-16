@@ -1564,7 +1564,8 @@ app.put('/api/reportes/:id_reporte/valoracion', ...requireAnyAuth, async (req, r
         SET
           calificacion_servicio = @calificacion_servicio,
           comentario_valoracion = @comentario_valoracion,
-          fecha_valoracion = @fecha_valoracion
+          fecha_valoracion = @fecha_valoracion,
+          estado = 'Liberado'
         WHERE id_mantenimiento = @id_reporte
           AND id_usuario_reporta = @id_usuario_reporta
           AND COALESCE(estado, 'Pendiente') = 'Cerrado'
@@ -1576,7 +1577,24 @@ app.put('/api/reportes/:id_reporte/valoracion', ...requireAnyAuth, async (req, r
       })
     }
 
-    return res.status(200).json({ message: 'Valoracion guardada correctamente' })
+    // Obtener id_ci para actualizar el activo
+    const ciResult = await pool
+      .request()
+      .input('id_reporte', sql.Char(10), id_reporte)
+      .query(`
+        SELECT id_ci FROM Mantenimientos WHERE id_mantenimiento = @id_reporte
+      `)
+
+    if (ciResult.recordset?.[0]?.id_ci) {
+      await pool
+        .request()
+        .input('id_ci', sql.VarChar(25), ciResult.recordset[0].id_ci)
+        .query(`
+          UPDATE Elementos_Configuracion SET estado = 'Activo' WHERE id_ci = @id_ci
+        `)
+    }
+
+    return res.status(200).json({ message: 'Evaluacion completada y folio liberado correctamente' })
   } catch (err) {
     console.error('Error en PUT /api/reportes/:id_reporte/valoracion:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })

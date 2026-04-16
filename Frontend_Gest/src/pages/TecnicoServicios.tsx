@@ -394,8 +394,8 @@ export default function TecnicoServicios() {
 
       {selectedServicio ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/55 p-4">
-          <div className="w-full max-w-5xl rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="modal-content-wrapper">
+            <div className="mb-0 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="text-xl font-bold text-slate-900">
                   Historial y Cambio - {selectedServicio.id_ci}
@@ -414,8 +414,8 @@ export default function TecnicoServicios() {
               </button>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-              <section className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="modal-grid-responsive">
+              <section className="modal-history-section">
                 <div className="mb-3 flex items-center justify-between">
                   <h4 className="text-base font-semibold text-slate-900">Historial de Cambios</h4>
                   {historialLoading ? <span className="text-xs text-slate-500">Cargando...</span> : null}
@@ -456,7 +456,7 @@ export default function TecnicoServicios() {
                 ) : null}
               </section>
 
-              <section className="rounded-xl border border-slate-200 bg-white p-4">
+              <section className="modal-form-section">
                 <h4 className="text-base font-semibold text-slate-900">Registrar Nuevo Cambio</h4>
                 <form className="mt-4 space-y-4" onSubmit={submitHistorialCambio}>
                   <label className="block">
