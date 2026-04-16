@@ -182,9 +182,9 @@ export default function NuevoReporte() {
           { headers: headers() }
         );
         const data = (response.data || []).map(
-          (item: { id_ci: string; nombre_equipo: string | null; numero_serie: string }) => ({
+          (item: { id_ci: string; nombre_equipo: string | null; numero_serie: string; nombre_tipo: string | null }) => ({
             id: item.id_ci,
-            label: `${item.id_ci} - ${item.nombre_equipo || item.numero_serie || "Sin nombre"}`,
+            label: item.nombre_tipo || item.numero_serie || item.id_ci,
           })
         );
         if (isMounted) {
@@ -267,7 +267,7 @@ export default function NuevoReporte() {
               </div>
 
               <div>
-                <label className="mb-2 block text-xs font-semibold text-gray-700">ID DEL EQUIPO</label>
+                <label className="mb-2 block text-xs font-semibold text-gray-700">EQUIPO</label>
                 <div className="relative">
                   <User className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                   <select

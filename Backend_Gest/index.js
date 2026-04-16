@@ -581,9 +581,14 @@ app.get('/api/sublocalizaciones/:id_sublocalizacion/ci', ...requireAnyAuth, asyn
       .input('id_sublocalizacion', sql.Char(10), id_sublocalizacion)
       .query(
         `
-        SELECT id_ci, nombre_equipo, numero_serie
-        FROM Elementos_Configuracion
-        WHERE id_sublocalizacion = @id_sublocalizacion
+        SELECT
+          ci.id_ci,
+          ci.nombre_equipo,
+          ci.numero_serie,
+          tc.nombre_tipo
+        FROM Elementos_Configuracion ci
+        JOIN Tipo_CI tc ON tc.id_tipo_ci = ci.id_tipo_ci
+        WHERE ci.id_sublocalizacion = @id_sublocalizacion
         ORDER BY id_ci
         `
       )
