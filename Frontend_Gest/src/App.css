@@ -194,6 +194,30 @@ body {
   color: #b91c1c;
 }
 
+/* Infrastructure Layout - Symmetric CSS Grid */
+.infrastructure-grid-row {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: 1fr 2.2fr;
+}
+
+@media (max-width: 1280px) {
+  .infrastructure-grid-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.infrastructure-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 1rem;
+  border: 1px solid #e2e8f0;
+  background-color: #ffffff;
+  padding: 1.5rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-sizing: border-box;
+}
+
 @media (max-width: 480px) {
   .login-card {
     padding: 56px 24px 28px;

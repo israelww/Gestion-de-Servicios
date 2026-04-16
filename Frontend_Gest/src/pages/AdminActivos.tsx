@@ -550,176 +550,175 @@ export default function AdminActivos() {
             {loading ? <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-600">Cargando gestion de activos...</div> : null}
 
             {!loading && activeView === "gestion-infraestructura" ? (
-              <div className="grid gap-8 xl:grid-cols-[1.1fr_1fr]">
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h2 className="text-2xl font-bold text-[#001f3f]">Gestion de Edificios</h2>
-                  <form className="mt-6 space-y-5" onSubmit={submitBuilding}>
-                    <div className="grid gap-5 md:grid-cols-2">
-                      <label><Label>Nombre</Label><input value={buildingForm.nombre_edificio} onChange={(e) => setBuildingForm((p) => ({ ...p, nombre_edificio: e.target.value }))} maxLength={50} className={inputClass()} required /></label>
-                    <label><Label>ID autogenerado</Label><input value={displayBuildingId} readOnly className={inputClass(true)} /></label>
-                  </div>
-                    <label className="block"><Label>Descripcion</Label><textarea value={buildingForm.descripcion_edificio} onChange={(e) => setBuildingForm((p) => ({ ...p, descripcion_edificio: e.target.value }))} rows={4} className={`${inputClass()} min-h-[140px]`} required /></label>
-                    <Preview text="El ID generado para este edificio sera:" value={displayBuildingId} />
-                    <div className="flex flex-wrap gap-3">
-                      <button type="submit" disabled={submitting} className="rounded-xl bg-[#001f3f] px-6 py-4 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-70">
-                        {editingBuildingId ? "Actualizar Edificio" : "Guardar Edificio"}
-                      </button>
-                      {editingBuildingId ? (
-                        <button
-                          type="button"
-                          className="rounded-xl border border-slate-300 px-6 py-4 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                          onClick={() => {
-                            setBuildingForm(initialBuilding);
-                            setEditingBuildingId(null);
-                            setStatusMessage("");
-                            setErrorMessage("");
-                          }}
-                        >
-                          Cancelar
-                        </button>
-                      ) : null}
+              <div className="space-y-8">
+                <div className="infrastructure-grid-row">
+                  <section className="infrastructure-card">
+                    <h2 className="text-2xl font-bold text-[#001f3f]">Gestion de Edificios</h2>
+                    <form className="mt-6 space-y-5" onSubmit={submitBuilding}>
+                      <div className="grid gap-5 md:grid-cols-2">
+                        <label><Label>Nombre</Label><input value={buildingForm.nombre_edificio} onChange={(e) => setBuildingForm((p) => ({ ...p, nombre_edificio: e.target.value }))} maxLength={50} className={inputClass()} required /></label>
+                      <label><Label>ID autogenerado</Label><input value={displayBuildingId} readOnly className={inputClass(true)} /></label>
                     </div>
-                  </form>
-                </section>
-                <section className="w-full max-w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h3 className="text-xl font-bold text-slate-900">Edificios registrados</h3>
-                  <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-slate-100 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">ID</th><th className="px-4 py-3">Nombre</th><th className="px-4 py-3">Descripcion</th><th className="pl-6 pr-8 py-3 text-left">Accion</th></tr></thead>
-                      <tbody className="divide-y divide-slate-200 bg-white">
-                        {edificios.map((item) => (
-                          <tr key={item.id_edificio}>
-                            <td className="px-4 py-3 font-medium">{item.id_edificio}</td>
-                            <td className="px-4 py-3">{item.nombre_edificio}</td>
-                            <td className="px-4 py-3">{item.descripcion_edificio}</td>
-                            <td className="pl-6 pr-8 py-3">
-                              <ActionButtons
-                                onEdit={() => {
-                                  setBuildingForm({
-                                    id_edificio: item.id_edificio,
-                                    nombre_edificio: item.nombre_edificio,
-                                    descripcion_edificio: item.descripcion_edificio,
-                                  });
-                                  setEditingBuildingId(item.id_edificio);
-                                  setStatusMessage("");
-                                  setErrorMessage("");
-                                }}
-                                onDelete={async () => {
-                                  if (!window.confirm("Eliminar este edificio? Esta accion no se puede deshacer.")) {
-                                    return;
-                                  }
-                                  try {
-                                    await axios.delete(`${API_BASE_URL}/edificios/${item.id_edificio}`, {
-                                      headers: headers(),
+                      <label className="block"><Label>Descripcion</Label><textarea value={buildingForm.descripcion_edificio} onChange={(e) => setBuildingForm((p) => ({ ...p, descripcion_edificio: e.target.value }))} rows={4} className={`${inputClass()} min-h-[140px]`} required /></label>
+                      <Preview text="El ID generado para este edificio sera:" value={displayBuildingId} />
+                      <div className="flex flex-wrap gap-3">
+                        <button type="submit" disabled={submitting} className="rounded-xl bg-[#001f3f] px-6 py-4 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-70">
+                          {editingBuildingId ? "Actualizar Edificio" : "Guardar Edificio"}
+                        </button>
+                        {editingBuildingId ? (
+                          <button
+                            type="button"
+                            className="rounded-xl border border-slate-300 px-6 py-4 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                            onClick={() => {
+                              setBuildingForm(initialBuilding);
+                              setEditingBuildingId(null);
+                              setStatusMessage("");
+                              setErrorMessage("");
+                            }}
+                          >
+                            Cancelar
+                          </button>
+                        ) : null}
+                      </div>
+                    </form>
+                  </section>
+                  <section className="infrastructure-card">
+                    <h3 className="text-xl font-bold text-slate-900">Edificios registrados</h3>
+                    <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-100 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">ID</th><th className="px-4 py-3">Nombre</th><th className="px-4 py-3">Descripcion</th><th className="pl-6 pr-8 py-3 text-left">Accion</th></tr></thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {edificios.map((item) => (
+                            <tr key={item.id_edificio}>
+                              <td className="px-4 py-3 font-medium">{item.id_edificio}</td>
+                              <td className="px-4 py-3">{item.nombre_edificio}</td>
+                              <td className="px-4 py-3">{item.descripcion_edificio}</td>
+                              <td className="pl-6 pr-8 py-3">
+                                <ActionButtons
+                                  onEdit={() => {
+                                    setBuildingForm({
+                                      id_edificio: item.id_edificio,
+                                      nombre_edificio: item.nombre_edificio,
+                                      descripcion_edificio: item.descripcion_edificio,
                                     });
-                                    setStatusMessage("Edificio eliminado correctamente.");
-                                    await reload();
-                                  } catch (error) {
-                                    setErrorMessage(
-                                      getApiErrorMessage(error, "No se pudo eliminar el edificio.")
-                                    );
-                                  }
-                                }}
-                              />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              </div>
-            ) : null}
-
-            {!loading && activeView === "gestion-infraestructura" ? (
-              <div className="grid gap-8 xl:grid-cols-[1.05fr_1fr]">
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h2 className="text-2xl font-bold text-[#001f3f]">Aulas y Laboratorios</h2>
-                  <form className="mt-6 space-y-5" onSubmit={submitSub}>
-                    <div className="grid gap-5 md:grid-cols-2">
-                      <label><Label>Edificio asociado</Label><select value={subForm.id_edificio} onChange={(e) => setSubForm((p) => ({ ...p, id_edificio: e.target.value }))} className={inputClass(isEditingSub)} disabled={isEditingSub} required><option value="">Selecciona un edificio</option>{edificios.map((item) => <option key={item.id_edificio} value={item.id_edificio}>{item.nombre_edificio}</option>)}</select></label>
-                      <label><Label>Codigo de aula o tipo</Label><input value={subForm.codigo_area} onChange={(e) => setSubForm((p) => ({ ...p, codigo_area: e.target.value }))} maxLength={6} className={inputClass(isEditingSub)} disabled={isEditingSub} required /></label>
+                                    setEditingBuildingId(item.id_edificio);
+                                    setStatusMessage("");
+                                    setErrorMessage("");
+                                  }}
+                                  onDelete={async () => {
+                                    if (!window.confirm("Eliminar este edificio? Esta accion no se puede deshacer.")) {
+                                      return;
+                                    }
+                                    try {
+                                      await axios.delete(`${API_BASE_URL}/edificios/${item.id_edificio}`, {
+                                        headers: headers(),
+                                      });
+                                      setStatusMessage("Edificio eliminado correctamente.");
+                                      await reload();
+                                    } catch (error) {
+                                      setErrorMessage(
+                                        getApiErrorMessage(error, "No se pudo eliminar el edificio.")
+                                      );
+                                    }
+                                  }}
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                    <label className="block"><Label>Nombre</Label><input value={subForm.nombre_sublocalizacion} onChange={(e) => setSubForm((p) => ({ ...p, nombre_sublocalizacion: e.target.value }))} className={inputClass()} required /></label>
-                    <label className="block"><Label>ID autogenerado</Label><input value={displaySubId} readOnly className={inputClass(true)} /></label>
-                    <Preview text="El ID generado para esta sublocalizacion sera:" value={displaySubId} />
-                    <div className="flex flex-wrap gap-3">
-                      <button type="submit" disabled={submitting} className="rounded-xl bg-[#001f3f] px-6 py-4 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-70">
-                        {isEditingSub ? "Actualizar Sublocalizacion" : "Guardar Sublocalizacion"}
-                      </button>
-                      {isEditingSub ? (
-                        <button
-                          type="button"
-                          className="rounded-xl border border-slate-300 px-6 py-4 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                          onClick={() => {
-                            setSubForm(initialSub);
-                            setEditingSubId(null);
-                            setStatusMessage("");
-                            setErrorMessage("");
-                          }}
-                        >
-                          Cancelar
+                  </section>
+                </div>
+                <div className="infrastructure-grid-row">
+                  <section className="infrastructure-card">
+                    <h2 className="text-2xl font-bold text-[#001f3f]">Aulas y Laboratorios</h2>
+                    <form className="mt-6 space-y-5" onSubmit={submitSub}>
+                      <div className="grid gap-5 md:grid-cols-2">
+                        <label><Label>Edificio asociado</Label><select value={subForm.id_edificio} onChange={(e) => setSubForm((p) => ({ ...p, id_edificio: e.target.value }))} className={inputClass(isEditingSub)} disabled={isEditingSub} required><option value="">Selecciona un edificio</option>{edificios.map((item) => <option key={item.id_edificio} value={item.id_edificio}>{item.nombre_edificio}</option>)}</select></label>
+                        <label><Label>Codigo de aula o tipo</Label><input value={subForm.codigo_area} onChange={(e) => setSubForm((p) => ({ ...p, codigo_area: e.target.value }))} maxLength={6} className={inputClass(isEditingSub)} disabled={isEditingSub} required /></label>
+                      </div>
+                      <label className="block"><Label>Nombre</Label><input value={subForm.nombre_sublocalizacion} onChange={(e) => setSubForm((p) => ({ ...p, nombre_sublocalizacion: e.target.value }))} className={inputClass()} required /></label>
+                      <label className="block"><Label>ID autogenerado</Label><input value={displaySubId} readOnly className={inputClass(true)} /></label>
+                      <Preview text="El ID generado para esta sublocalizacion sera:" value={displaySubId} />
+                      <div className="flex flex-wrap gap-3">
+                        <button type="submit" disabled={submitting} className="rounded-xl bg-[#001f3f] px-6 py-4 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-70">
+                          {isEditingSub ? "Actualizar Sublocalizacion" : "Guardar Sublocalizacion"}
                         </button>
-                      ) : null}
+                        {isEditingSub ? (
+                          <button
+                            type="button"
+                            className="rounded-xl border border-slate-300 px-6 py-4 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                            onClick={() => {
+                              setSubForm(initialSub);
+                              setEditingSubId(null);
+                              setStatusMessage("");
+                              setErrorMessage("");
+                            }}
+                          >
+                            Cancelar
+                          </button>
+                        ) : null}
+                      </div>
+                    </form>
+                  </section>
+                  <section className="infrastructure-card">
+                    <h3 className="text-xl font-bold text-slate-900">Sublocalizaciones registradas</h3>
+                    <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-100 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">ID</th><th className="px-4 py-3">Sublocalizacion</th><th className="px-4 py-3">Edificio</th><th className="pl-6 pr-8 py-3 text-left">Accion</th></tr></thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {sublocalizaciones.map((item) => (
+                            <tr key={item.id_sublocalizacion}>
+                              <td className="px-4 py-3 font-medium">{item.id_sublocalizacion}</td>
+                              <td className="px-4 py-3">{item.nombre_sublocalizacion}</td>
+                              <td className="px-4 py-3">
+                                {edificios.find((edificio) => edificio.id_edificio === item.id_edificio)?.nombre_edificio ||
+                                  item.id_edificio}
+                              </td>
+                              <td className="pl-6 pr-8 py-3">
+                                <ActionButtons
+                                  onEdit={() => {
+                                    const building = edificios.find((edificio) => edificio.id_edificio === item.id_edificio);
+                                    const buildingCodeForItem = building
+                                      ? norm(building.id_edificio, 4) || norm(building.nombre_edificio, 4)
+                                      : "";
+                                    const suffix = cleanId(item.id_sublocalizacion).slice(buildingCodeForItem.length);
+                                    setSubForm({
+                                      id_edificio: item.id_edificio,
+                                      nombre_sublocalizacion: item.nombre_sublocalizacion,
+                                      codigo_area: suffix,
+                                    });
+                                    setEditingSubId(cleanId(item.id_sublocalizacion));
+                                    setStatusMessage("");
+                                    setErrorMessage("");
+                                  }}
+                                  onDelete={async () => {
+                                    if (!window.confirm("Eliminar esta sublocalizacion? Esta accion no se puede deshacer.")) {
+                                      return;
+                                    }
+                                    try {
+                                      await axios.delete(
+                                        `${API_BASE_URL}/sublocalizaciones/${cleanId(item.id_sublocalizacion)}`,
+                                        { headers: headers() }
+                                      );
+                                      setStatusMessage("Sublocalizacion eliminada correctamente.");
+                                      await reload();
+                                    } catch (error) {
+                                      setErrorMessage(
+                                        getApiErrorMessage(error, "No se pudo eliminar la sublocalizacion.")
+                                      );
+                                    }
+                                  }}
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  </form>
-                </section>
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h3 className="text-xl font-bold text-slate-900">Sublocalizaciones registradas</h3>
-                  <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-slate-100 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">ID</th><th className="px-4 py-3">Sublocalizacion</th><th className="px-4 py-3">Edificio</th><th className="pl-6 pr-8 py-3 text-left">Accion</th></tr></thead>
-                      <tbody className="divide-y divide-slate-200 bg-white">
-                        {sublocalizaciones.map((item) => (
-                          <tr key={item.id_sublocalizacion}>
-                            <td className="px-4 py-3 font-medium">{item.id_sublocalizacion}</td>
-                            <td className="px-4 py-3">{item.nombre_sublocalizacion}</td>
-                            <td className="px-4 py-3">
-                              {edificios.find((edificio) => edificio.id_edificio === item.id_edificio)?.nombre_edificio ||
-                                item.id_edificio}
-                            </td>
-                            <td className="pl-6 pr-8 py-3">
-                              <ActionButtons
-                                onEdit={() => {
-                                  const building = edificios.find((edificio) => edificio.id_edificio === item.id_edificio);
-                                  const buildingCodeForItem = building
-                                    ? norm(building.id_edificio, 4) || norm(building.nombre_edificio, 4)
-                                    : "";
-                                  const suffix = cleanId(item.id_sublocalizacion).slice(buildingCodeForItem.length);
-                                  setSubForm({
-                                    id_edificio: item.id_edificio,
-                                    nombre_sublocalizacion: item.nombre_sublocalizacion,
-                                    codigo_area: suffix,
-                                  });
-                                  setEditingSubId(cleanId(item.id_sublocalizacion));
-                                  setStatusMessage("");
-                                  setErrorMessage("");
-                                }}
-                                onDelete={async () => {
-                                  if (!window.confirm("Eliminar esta sublocalizacion? Esta accion no se puede deshacer.")) {
-                                    return;
-                                  }
-                                  try {
-                                    await axios.delete(
-                                      `${API_BASE_URL}/sublocalizaciones/${cleanId(item.id_sublocalizacion)}`,
-                                      { headers: headers() }
-                                    );
-                                    setStatusMessage("Sublocalizacion eliminada correctamente.");
-                                    await reload();
-                                  } catch (error) {
-                                    setErrorMessage(
-                                      getApiErrorMessage(error, "No se pudo eliminar la sublocalizacion.")
-                                    );
-                                  }
-                                }}
-                              />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
+                  </section>
+                </div>
               </div>
             ) : null}
 
