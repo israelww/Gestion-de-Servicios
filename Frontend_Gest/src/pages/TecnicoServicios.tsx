@@ -22,6 +22,24 @@ interface ServicioTecnico {
   usuario_reporta: string | null;
 }
 
+interface CiDetalle {
+  id_ci: string;
+  numero_serie: string;
+  nombre_equipo: string | null;
+  modelo: string | null;
+  estado: string;
+  fecha_ingreso: string;
+  id_tipo_ci: string;
+  id_marca: string;
+  id_sublocalizacion: string;
+  id_usuario_responsable: string | null;
+  nombre_tipo: string;
+  nombre_marca: string;
+  nombre_sublocalizacion: string;
+  nombre_edificio: string;
+  usuario_responsable: string | null;
+}
+
 type HistorialCambioCI = {
   id_historial: number;
   id_ci: string;
@@ -84,6 +102,8 @@ export default function TecnicoServicios() {
   const [servicioACompletar, setServicioACompletar] = useState<ServicioTecnico | null>(null);
   const [solucionForm, setSolucionForm] = useState("");
   const [completingTicket, setCompletingTicket] = useState(false);
+  const [detalleCi, setDetalleCi] = useState<CiDetalle | null>(null);
+  const [detalleCiLoading, setDetalleCiLoading] = useState(false);
   const serviciosPendientes = servicios.filter((item) => item.estado !== "Cerrado");
   const serviciosCerrados = servicios.filter((item) => item.estado === "Cerrado");
 
@@ -226,6 +246,28 @@ export default function TecnicoServicios() {
     }
   };
 
+  const openDetalleCiModal = async (item: ServicioTecnico) => {
+    setDetalleCi(null);
+    setDetalleCiLoading(true);
+    setStatusMessage("");
+    setErrorMessage("");
+    try {
+      const response = await axios.get<CiDetalle>(`${API_BASE_URL}/ci/${item.id_ci}/detalle`, {
+        headers: headers(),
+      });
+      setDetalleCi(response.data);
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, "No se pudo cargar el detalle del equipo."));
+    } finally {
+      setDetalleCiLoading(false);
+    }
+  };
+
+  const closeDetalleCiModal = () => {
+    setDetalleCi(null);
+    setDetalleCiLoading(false);
+  };
+
   const renderServicioCard = (item: ServicioTecnico) => (
     <article key={item.id_reporte} className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -255,6 +297,13 @@ export default function TecnicoServicios() {
           {item.fecha_cierre ? ` | Cerrado: ${formatDate(item.fecha_cierre)}` : ""}
         </p>
         <div className="inline-flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void openDetalleCiModal(item)}
+            className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+          >
+            Detalle del Equipo
+          </button>
           <button
             type="button"
             onClick={() => void openHistorialModal(item)}
@@ -529,6 +578,81 @@ export default function TecnicoServicios() {
                 {completingTicket ? "Completando..." : "Completar Ticket"}
               </button>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {detalleCiLoading || detalleCi ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4">
+          <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">Detalle del Equipo</h3>
+                <p className="text-sm text-slate-600">
+                  {detalleCi?.id_ci || "Cargando..."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeDetalleCiModal}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            {detalleCiLoading ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-600">
+                Cargando detalle del equipo...
+              </div>
+            ) : null}
+
+            {detalleCi ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase text-slate-500">ID CI</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{detalleCi.id_ci}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Tipo de CI</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{detalleCi.nombre_tipo}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Equipo</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{detalleCi.nombre_equipo || "Sin nombre"}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Numero de Serie</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{detalleCi.numero_serie}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Modelo</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{detalleCi.modelo || "Sin modelo"}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Marca</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{detalleCi.nombre_marca}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Ubicacion</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">
+                    {detalleCi.nombre_edificio} / {detalleCi.nombre_sublocalizacion}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Responsable</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{detalleCi.usuario_responsable || "No asignado"}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Estado</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{detalleCi.estado}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Fecha de Ingreso</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{formatDate(detalleCi.fecha_ingreso)}</p>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

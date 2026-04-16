@@ -62,6 +62,9 @@ CREATE TABLE Mantenimientos (
     tipo_mantenimiento VARCHAR(50) DEFAULT 'Correctivo', -- Preventivo, Correctivo
     descripcion_tarea TEXT,
     descripcion_solucion VARCHAR(1000),
+    calificacion_servicio TINYINT,
+    comentario_valoracion VARCHAR(500),
+    fecha_valoracion DATETIME,
     estado VARCHAR(20) DEFAULT 'Pendiente', -- Pendiente, Asignado, En Proceso, Cerrado
     prioridad VARCHAR(20), -- Baja, Media, Alta, Critica
     id_tecnico_asignado CHAR(15) REFERENCES Usuarios(id_usuario),

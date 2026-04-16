@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import { getToken } from "../../auth/storage";
+import { Star } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:4000/api";
 
@@ -18,6 +19,9 @@ interface ReporteDetalle {
   nombre_equipo: string | null;
   numero_serie: string | null;
   usuario_reporta: string | null;
+  tecnico_asignado: string | null;
+  calificacion_servicio?: number | null;
+  comentario_valoracion?: string | null;
 }
 
 const headers = () => {
@@ -63,6 +67,11 @@ export default function ReporteDetalles() {
   const [reporte, setReporte] = useState<ReporteDetalle | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isValorarOpen, setIsValorarOpen] = useState(false);
+  const [calificacion, setCalificacion] = useState(0);
+  const [comentario, setComentario] = useState("");
+  const [submittingValoracion, setSubmittingValoracion] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -95,6 +104,58 @@ export default function ReporteDetalles() {
     };
   }, [id]);
 
+  useEffect(() => {
+    if (!statusMessage) return;
+    const timer = window.setTimeout(() => setStatusMessage(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [statusMessage]);
+
+  const openValorarModal = () => {
+    if (!reporte) return;
+    setCalificacion(reporte.calificacion_servicio || 0);
+    setComentario(reporte.comentario_valoracion || "");
+    setIsValorarOpen(true);
+  };
+
+  const closeValorarModal = () => {
+    setIsValorarOpen(false);
+    setCalificacion(0);
+    setComentario("");
+  };
+
+  const submitValoracion = async () => {
+    if (!reporte) return;
+    if (!calificacion) {
+      setErrorMessage("Selecciona una calificacion en estrellas.");
+      return;
+    }
+
+    setSubmittingValoracion(true);
+    setErrorMessage(null);
+    setStatusMessage(null);
+    try {
+      await axios.put(
+        `${API_BASE_URL}/reportes/${reporte.id_reporte}/valoracion`,
+        {
+          calificacion_servicio: calificacion,
+          comentario_valoracion: comentario,
+        },
+        { headers: headers() }
+      );
+      setStatusMessage("Valoracion guardada correctamente.");
+      closeValorarModal();
+
+      const response = await axios.get<ReporteDetalle>(`${API_BASE_URL}/reportes/${reporte.id_reporte}`, {
+        headers: headers(),
+      });
+      setReporte(response.data);
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, "No se pudo guardar la valoracion."));
+    } finally {
+      setSubmittingValoracion(false);
+    }
+  };
+
   return (
     <section
       className="mt-10 text-slate-900 shadow-2xl"
@@ -117,6 +178,11 @@ export default function ReporteDetalles() {
       {errorMessage ? (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {errorMessage}
+        </div>
+      ) : null}
+      {statusMessage ? (
+        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {statusMessage}
         </div>
       ) : null}
 
@@ -163,7 +229,21 @@ export default function ReporteDetalles() {
                 <dt className="text-xs font-semibold uppercase text-slate-500">Usuario que reporta</dt>
                 <dd className="mt-1">{reporte.usuario_reporta || "Sin nombre"}</dd>
               </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase text-slate-500">Tecnico asignado</dt>
+                <dd className="mt-1">{reporte.tecnico_asignado || "No asignado"}</dd>
+              </div>
             </dl>
+            {reporte.estado.toLowerCase() === "cerrado" ? (
+              <button
+                type="button"
+                className="mt-6 inline-flex items-center justify-start gap-2 rounded-full bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+                onClick={openValorarModal}
+              >
+                <Star className="h-4 w-4" />
+                {reporte.calificacion_servicio ? "Editar Valoracion" : "Valorar Servicio"}
+              </button>
+            ) : null}
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -172,6 +252,73 @@ export default function ReporteDetalles() {
               {reporte.descripcion_falla}
             </p>
           </section>
+        </div>
+      ) : null}
+
+      {isValorarOpen && reporte ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">Valorar Servicio</h3>
+                <p className="text-sm text-slate-600">
+                  Tecnico: {reporte.tecnico_asignado || "No asignado"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeValorarModal}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <p className="mb-2 text-sm font-semibold text-slate-700">Satisfaccion (Tiempo y forma)</p>
+              <div className="inline-flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setCalificacion(value)}
+                    className="rounded-full p-1 hover:bg-slate-100"
+                    aria-label={`Calificar con ${value} estrella${value > 1 ? "s" : ""}`}
+                  >
+                    <Star
+                      className={`h-7 w-7 ${
+                        value <= calificacion
+                          ? "fill-amber-400 text-amber-500"
+                          : "text-slate-300"
+                      }`}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label className="block">
+              <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-700">
+                Comentario (opcional)
+              </span>
+              <textarea
+                value={comentario}
+                onChange={(e) => setComentario(e.target.value)}
+                rows={4}
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-transparent focus:ring-2 focus:ring-blue-900"
+                placeholder="Comparte tu experiencia sobre la solucion aplicada."
+              />
+            </label>
+
+            <button
+              type="button"
+              disabled={submittingValoracion}
+              onClick={() => void submitValoracion()}
+              className="mt-4 w-full rounded-xl bg-[#001f3f] py-3 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-70"
+            >
+              {submittingValoracion ? "Guardando..." : "Guardar Valoracion"}
+            </button>
+          </div>
         </div>
       ) : null}
     </section>

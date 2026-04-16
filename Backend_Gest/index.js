@@ -217,6 +217,24 @@ async function ensureWorkflowColumns(pool) {
       ALTER TABLE Mantenimientos
       ADD fecha_cierre DATETIME NULL
     END;
+
+    IF COL_LENGTH('Mantenimientos', 'calificacion_servicio') IS NULL
+    BEGIN
+      ALTER TABLE Mantenimientos
+      ADD calificacion_servicio TINYINT NULL
+    END;
+
+    IF COL_LENGTH('Mantenimientos', 'comentario_valoracion') IS NULL
+    BEGIN
+      ALTER TABLE Mantenimientos
+      ADD comentario_valoracion VARCHAR(500) NULL
+    END;
+
+    IF COL_LENGTH('Mantenimientos', 'fecha_valoracion') IS NULL
+    BEGIN
+      ALTER TABLE Mantenimientos
+      ADD fecha_valoracion DATETIME NULL
+    END;
   `)
 
   workflowSchemaReady = true
@@ -678,6 +696,55 @@ app.get('/api/ci', async (_req, res) => {
     return res.status(200).json(result.recordset)
   } catch (err) {
     console.error('Error en GET /api/ci:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.get('/api/ci/:id_ci/detalle', ...requireAdminOrTecnico, async (req, res) => {
+  const id_ci = toTrimmedString(req.params?.id_ci)
+  if (!id_ci) return badRequest(res, 'El id_ci es obligatorio')
+
+  try {
+    const pool = await getPool()
+    if (!pool) {
+      return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+    }
+
+    const result = await pool
+      .request()
+      .input('id_ci', sql.VarChar(25), id_ci)
+      .query(`
+        SELECT
+          ci.id_ci,
+          ci.numero_serie,
+          ci.nombre_equipo,
+          ci.modelo,
+          ci.estado,
+          ci.fecha_ingreso,
+          ci.id_tipo_ci,
+          ci.id_marca,
+          ci.id_sublocalizacion,
+          ci.id_usuario_responsable,
+          tc.nombre_tipo,
+          m.nombre_marca,
+          s.nombre_sublocalizacion,
+          e.nombre_edificio,
+          u.nombre_completo AS usuario_responsable
+        FROM Elementos_Configuracion ci
+        JOIN Tipo_CI tc ON tc.id_tipo_ci = ci.id_tipo_ci
+        JOIN marcas m ON m.id_marca = ci.id_marca
+        JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
+        JOIN Edificios e ON e.id_edificio = s.id_edificio
+        LEFT JOIN Usuarios u ON u.id_usuario = ci.id_usuario_responsable
+        WHERE ci.id_ci = @id_ci
+      `)
+
+    const row = result.recordset?.[0]
+    if (!row) return res.status(404).json({ message: 'El CI no existe' })
+
+    return res.status(200).json(row)
+  } catch (err) {
+    console.error('Error en GET /api/ci/:id_ci/detalle:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
   }
 })
@@ -1335,17 +1402,22 @@ app.get('/api/reportes', ...requireAnyAuth, async (req, res) => {
           m.descripcion_tarea AS descripcion_falla,
           m.descripcion_solucion,
           m.fecha_cierre,
+          m.calificacion_servicio,
+          m.comentario_valoracion,
+          m.fecha_valoracion,
           m.fecha_mantenimiento AS fecha_reporte,
           COALESCE(m.estado, 'Pendiente') AS estado,
           COALESCE(m.prioridad, 'Sin priorizar') AS prioridad,
           e.nombre_edificio,
           s.nombre_sublocalizacion,
           ci.nombre_equipo,
-          ci.numero_serie
+          ci.numero_serie,
+          t.nombre_completo AS tecnico_asignado
         FROM Mantenimientos m
         JOIN Elementos_Configuracion ci ON ci.id_ci = m.id_ci
         JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
         JOIN Edificios e ON e.id_edificio = s.id_edificio
+        LEFT JOIN Usuarios t ON t.id_usuario = m.id_tecnico_asignado
         WHERE m.id_usuario_reporta = @id_usuario_reporta
         ORDER BY m.fecha_mantenimiento DESC, m.id_mantenimiento DESC
       `)
@@ -1436,7 +1508,10 @@ app.get('/api/reportes/:id_reporte', ...requireAnyAuth, async (req, res) => {
           ci.nombre_equipo,
           ci.numero_serie,
           u.nombre_completo AS usuario_reporta,
-          t.nombre_completo AS tecnico_asignado
+          t.nombre_completo AS tecnico_asignado,
+          m.calificacion_servicio,
+          m.comentario_valoracion,
+          m.fecha_valoracion
         FROM Mantenimientos m
         JOIN Elementos_Configuracion ci ON ci.id_ci = m.id_ci
         JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
@@ -1453,6 +1528,57 @@ app.get('/api/reportes/:id_reporte', ...requireAnyAuth, async (req, res) => {
     return res.status(200).json(row)
   } catch (err) {
     console.error('Error en GET /api/reportes/:id_reporte:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.put('/api/reportes/:id_reporte/valoracion', ...requireAnyAuth, async (req, res) => {
+  const id_reporte = toTrimmedString(req.params?.id_reporte)
+  const userId = req.user?.sub
+  const calificacion = Number.parseInt(String(req.body?.calificacion_servicio ?? ''), 10)
+  const comentario = toTrimmedString(req.body?.comentario_valoracion)
+
+  if (!userId) return res.status(401).json({ message: 'No autorizado' })
+  if (!id_reporte) return badRequest(res, 'El id_reporte es obligatorio')
+  if (!Number.isInteger(calificacion) || calificacion < 1 || calificacion > 5) {
+    return badRequest(res, 'calificacion_servicio debe estar entre 1 y 5')
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) {
+      return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+    }
+
+    await ensureWorkflowColumns(pool)
+
+    const result = await pool
+      .request()
+      .input('id_reporte', sql.Char(10), id_reporte)
+      .input('id_usuario_reporta', sql.Char(15), userId)
+      .input('calificacion_servicio', sql.TinyInt, calificacion)
+      .input('comentario_valoracion', sql.VarChar(500), comentario || null)
+      .input('fecha_valoracion', sql.DateTime, new Date())
+      .query(`
+        UPDATE Mantenimientos
+        SET
+          calificacion_servicio = @calificacion_servicio,
+          comentario_valoracion = @comentario_valoracion,
+          fecha_valoracion = @fecha_valoracion
+        WHERE id_mantenimiento = @id_reporte
+          AND id_usuario_reporta = @id_usuario_reporta
+          AND COALESCE(estado, 'Pendiente') = 'Cerrado'
+      `)
+
+    if (!result.rowsAffected?.[0]) {
+      return res.status(404).json({
+        message: 'Reporte no encontrado, no es tuyo o aun no esta cerrado',
+      })
+    }
+
+    return res.status(200).json({ message: 'Valoracion guardada correctamente' })
+  } catch (err) {
+    console.error('Error en PUT /api/reportes/:id_reporte/valoracion:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
   }
 })
