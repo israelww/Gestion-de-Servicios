@@ -42,7 +42,7 @@ CREATE TABLE Usuarios (
 
 -- 4. Elementos de Configuraci�n (El n�cleo)
 CREATE TABLE Elementos_Configuracion (
-    id_ci char(10) PRIMARY KEY,
+    id_ci VARCHAR(25) PRIMARY KEY,
     numero_serie VARCHAR(50) UNIQUE NOT NULL,
     nombre_equipo VARCHAR(100),
     modelo VARCHAR(100),
@@ -57,7 +57,7 @@ CREATE TABLE Elementos_Configuracion (
 -- 5. NUEVA: Tabla de Mantenimientos (Lo que te faltaba)
 CREATE TABLE Mantenimientos (
     id_mantenimiento char(10) PRIMARY KEY,
-    id_ci char(10) REFERENCES Elementos_Configuracion(id_ci),
+    id_ci VARCHAR(25) REFERENCES Elementos_Configuracion(id_ci),
     fecha_mantenimiento DATETIME,
     tipo_mantenimiento VARCHAR(50), -- Preventivo, Correctivo
     descripcion_tarea TEXT,
@@ -65,3 +65,34 @@ CREATE TABLE Mantenimientos (
     costo DECIMAL(10, 2),
     id_usuario_reporta CHAR(15) REFERENCES Usuarios(id_usuario)
 );
+
+-- 6. Reportes de fallas
+CREATE TABLE Reportes (
+    id_reporte INT IDENTITY(1,1) PRIMARY KEY,
+    id_edificio CHAR(10) REFERENCES Edificios(id_edificio),
+    id_sublocalizacion CHAR(10) REFERENCES Sublocalizaciones(id_sublocalizacion),
+    id_ci VARCHAR(25) REFERENCES Elementos_Configuracion(id_ci),
+    descripcion_falla VARCHAR(1000) NOT NULL,
+    fecha_reporte DATETIME DEFAULT GETDATE(),
+    estado VARCHAR(20) DEFAULT 'Abierto',
+    id_usuario_reporta CHAR(15) REFERENCES Usuarios(id_usuario)
+);
+
+ALTER TABLE Mantenimientos
+ADD id_reporte INT NULL REFERENCES Reportes(id_reporte);
+
+ALTER TABLE Mantenimientos
+ADD id_tecnico CHAR(15) NULL REFERENCES Usuarios(id_usuario);
+
+CREATE TABLE Mantenimiento_Detalle (
+  id_detalle INT IDENTITY(1,1) PRIMARY KEY,
+  id_mantenimiento CHAR(10) REFERENCES Mantenimientos(id_mantenimiento),
+  tipo_cambio VARCHAR(50), -- Cambio de pieza, limpieza, actualizacion, etc
+  componente VARCHAR(100), -- Disco duro, RAM, Fuente, etc
+  valor_anterior VARCHAR(200),
+  valor_nuevo VARCHAR(200),
+  notas VARCHAR(500)
+);
+
+
+
