@@ -3,15 +3,16 @@ import type { FormEvent } from "react";
 import axios from "axios";
 import {
   Boxes,
+  Building2,
   Edit3,
   Filter,
-  History,
+  MapPinned,
   Search,
   Trash2,
   UserRound,
   Wrench,
 } from "lucide-react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { getToken } from "../auth/storage";
 import { adminViewFromPath } from "./adminNavigation";
 
@@ -114,25 +115,13 @@ const Label = ({ children }: { children: string }) => (
 );
 
 const ActionButtons = ({
-  onHistory,
   onEdit,
   onDelete,
 }: {
-  onHistory?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
 }) => (
   <div className="inline-flex items-center gap-2">
-    {onHistory ? (
-      <button
-        type="button"
-        onClick={onHistory}
-        className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-      >
-        <History className="h-4 w-4" />
-        Historial
-      </button>
-    ) : null}
     <button
       type="button"
       onClick={onEdit}
@@ -183,7 +172,6 @@ const formatDate = (value: string) => {
 
 export default function AdminActivos() {
   const location = useLocation();
-  const navigate = useNavigate();
   const activeView = adminViewFromPath(location.pathname) as AssetsView;
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -750,7 +738,6 @@ export default function AdminActivos() {
                               </td>
                               <td className="px-4 py-2.5">
                                 <ActionButtons
-                                  onHistory={() => navigate(`/admin/catalogo-ci/${encodeURIComponent(cleanId(item.id_ci))}/cambios`)}
                                   onEdit={() => {
                                     const sub = sublocalizaciones.find(
                                       (s) => s.id_sublocalizacion === item.id_sublocalizacion
@@ -814,7 +801,6 @@ export default function AdminActivos() {
                         </div>
                         <div className="mt-4">
                           <ActionButtons
-                            onHistory={() => navigate(`/admin/catalogo-ci/${encodeURIComponent(cleanId(item.id_ci))}/cambios`)}
                             onEdit={() => {
                               const sub = sublocalizaciones.find(
                                 (s) => s.id_sublocalizacion === item.id_sublocalizacion

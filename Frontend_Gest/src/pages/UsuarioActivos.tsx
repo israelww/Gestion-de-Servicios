@@ -3,8 +3,10 @@ import type { FormEvent } from "react";
 import axios from "axios";
 import {
   Boxes,
+  Building2,
   Edit3,
   Filter,
+  MapPinned,
   Search,
   Trash2,
   UserRound,

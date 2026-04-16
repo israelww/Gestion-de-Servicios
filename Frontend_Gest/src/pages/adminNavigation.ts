@@ -35,7 +35,9 @@ export function adminPathForView(view: AdminView) {
 }
 
 export function adminViewFromPath(pathname: string): AdminView {
-  if (pathname.endsWith("/aulas-laboratorios")) return "aulas-laboratorios";
-  if (pathname.endsWith("/catalogo-ci") || pathname.includes("/catalogo-ci/")) return "catalogo-ci";
-  return "gestion-edificios";
+  if (pathname.endsWith("/bandeja-entrada")) return "bandeja-entrada";
+  if (pathname.endsWith("/gestion-infraestructura")) return "gestion-infraestructura";
+  if (pathname.endsWith("/catalogo-ci")) return "catalogo-ci";
+  if (pathname.endsWith("/gestion-usuarios")) return "gestion-usuarios";
+  return "bandeja-entrada";
 }
