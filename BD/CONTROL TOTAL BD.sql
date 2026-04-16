@@ -61,10 +61,25 @@ CREATE TABLE Mantenimientos (
     fecha_mantenimiento DATETIME DEFAULT GETDATE(),
     tipo_mantenimiento VARCHAR(50) DEFAULT 'Correctivo', -- Preventivo, Correctivo
     descripcion_tarea TEXT,
+    descripcion_solucion VARCHAR(1000),
     estado VARCHAR(20) DEFAULT 'Pendiente', -- Pendiente, Asignado, En Proceso, Cerrado
     prioridad VARCHAR(20), -- Baja, Media, Alta, Critica
     id_tecnico_asignado CHAR(15) REFERENCES Usuarios(id_usuario),
     tecnico_externo VARCHAR(100), -- Por si no es un usuario del sistema
     costo DECIMAL(10, 2),
-    id_usuario_reporta CHAR(15) REFERENCES Usuarios(id_usuario)
+    id_usuario_reporta CHAR(15) REFERENCES Usuarios(id_usuario),
+    fecha_cierre DATETIME
+);
+
+-- 6. Historial de cambios en CIs
+CREATE TABLE Historial_Cambios_CI (
+    id_historial INT IDENTITY(1,1) PRIMARY KEY,
+    id_ci VARCHAR(25) NOT NULL REFERENCES Elementos_Configuracion(id_ci),
+    id_mantenimiento CHAR(10) REFERENCES Mantenimientos(id_mantenimiento),
+    fecha_cambio DATETIME NOT NULL DEFAULT GETDATE(),
+    numero_transaccion VARCHAR(40),
+    origen_transaccion VARCHAR(40), -- Ticket, Mantenimiento Preventivo, Otro
+    tecnico VARCHAR(120) NOT NULL,
+    detalle_cambio VARCHAR(500) NOT NULL,
+    fecha_registro DATETIME NOT NULL DEFAULT GETDATE()
 );

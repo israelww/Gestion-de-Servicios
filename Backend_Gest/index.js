@@ -152,6 +152,7 @@ function requireAuth(req, res, next) {
 const requireAnyAuth = [requireAuth]
 const requireAdmin = [requireAuth, requireRole([ROLE_ADMIN])]
 const requireTecnico = [requireAuth, requireRole([ROLE_TECNICO])]
+const requireAdminOrTecnico = [requireAuth, requireRole([ROLE_ADMIN, ROLE_TECNICO])]
 
 function requireRole(rolesPermitidos) {
   return (req, res, next) => {
@@ -204,9 +205,64 @@ async function ensureWorkflowColumns(pool) {
       ALTER TABLE Mantenimientos
       ADD id_tecnico_asignado CHAR(15) NULL
     END;
+
+    IF COL_LENGTH('Mantenimientos', 'descripcion_solucion') IS NULL
+    BEGIN
+      ALTER TABLE Mantenimientos
+      ADD descripcion_solucion VARCHAR(1000) NULL
+    END;
+
+    IF COL_LENGTH('Mantenimientos', 'fecha_cierre') IS NULL
+    BEGIN
+      ALTER TABLE Mantenimientos
+      ADD fecha_cierre DATETIME NULL
+    END;
   `)
 
   workflowSchemaReady = true
+}
+
+let ciHistorySchemaReady = false
+async function ensureCiHistoryTable(pool) {
+  if (ciHistorySchemaReady) return
+
+  await pool.request().query(`
+    IF OBJECT_ID('Historial_Cambios_CI', 'U') IS NULL
+    BEGIN
+      CREATE TABLE Historial_Cambios_CI (
+        id_historial INT IDENTITY(1,1) PRIMARY KEY,
+        id_ci VARCHAR(25) NOT NULL,
+        id_mantenimiento CHAR(10) NULL,
+        fecha_cambio DATETIME NOT NULL CONSTRAINT DF_HistorialCI_fecha DEFAULT GETDATE(),
+        numero_transaccion VARCHAR(40) NULL,
+        origen_transaccion VARCHAR(40) NULL,
+        tecnico VARCHAR(120) NOT NULL,
+        detalle_cambio VARCHAR(500) NOT NULL,
+        fecha_registro DATETIME NOT NULL CONSTRAINT DF_HistorialCI_registro DEFAULT GETDATE(),
+        CONSTRAINT FK_HistorialCI_CI FOREIGN KEY (id_ci) REFERENCES Elementos_Configuracion(id_ci),
+        CONSTRAINT FK_HistorialCI_Mantenimiento FOREIGN KEY (id_mantenimiento) REFERENCES Mantenimientos(id_mantenimiento)
+      );
+    END;
+
+    IF COL_LENGTH('Historial_Cambios_CI', 'id_mantenimiento') IS NULL
+    BEGIN
+      ALTER TABLE Historial_Cambios_CI
+      ADD id_mantenimiento CHAR(10) NULL
+    END;
+
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.foreign_keys
+      WHERE name = 'FK_HistorialCI_Mantenimiento'
+    )
+    BEGIN
+      ALTER TABLE Historial_Cambios_CI
+      ADD CONSTRAINT FK_HistorialCI_Mantenimiento
+      FOREIGN KEY (id_mantenimiento) REFERENCES Mantenimientos(id_mantenimiento)
+    END;
+  `)
+
+  ciHistorySchemaReady = true
 }
 
 app.get('/api/edificios', async (_req, res) => {
@@ -903,6 +959,255 @@ app.delete('/api/ci/:id_ci', ...requireAdmin, async (req, res) => {
   }
 })
 
+app.get('/api/ci/:id_ci/historial-cambios', ...requireAdminOrTecnico, async (req, res) => {
+  const id_ci = toTrimmedString(req.params?.id_ci)
+  if (!id_ci) return badRequest(res, 'El id_ci es obligatorio')
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+
+    await ensureCiHistoryTable(pool)
+
+    const exists = await existsById(
+      pool.request(),
+      'Elementos_Configuracion',
+      'id_ci',
+      'id_ci',
+      id_ci
+    )
+    if (!exists) return res.status(404).json({ message: 'El CI no existe' })
+
+      const result = await pool
+        .request()
+        .input('id_ci', sql.VarChar(25), id_ci)
+        .query(`
+          SELECT
+            id_historial,
+            id_ci,
+            id_mantenimiento,
+            fecha_cambio,
+            numero_transaccion,
+            origen_transaccion,
+            tecnico,
+            detalle_cambio,
+          fecha_registro
+        FROM Historial_Cambios_CI
+        WHERE id_ci = @id_ci
+        ORDER BY fecha_cambio DESC, id_historial DESC
+      `)
+
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/ci/:id_ci/historial-cambios:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.post('/api/ci/:id_ci/historial-cambios', ...requireTecnico, async (req, res) => {
+  const id_ci = toTrimmedString(req.params?.id_ci)
+  const payload = {
+    fecha_cambio: toTrimmedString(req.body?.fecha_cambio),
+    id_mantenimiento: toTrimmedString(req.body?.id_mantenimiento),
+    detalle_cambio: toTrimmedString(req.body?.detalle_cambio),
+  }
+
+  if (!id_ci) return badRequest(res, 'El id_ci es obligatorio')
+  if (!payload.id_mantenimiento || !payload.detalle_cambio) {
+    return badRequest(res, 'id_mantenimiento y detalle_cambio son obligatorios')
+  }
+
+  const parsedDate = payload.fecha_cambio ? new Date(payload.fecha_cambio) : new Date()
+  if (Number.isNaN(parsedDate.getTime())) {
+    return badRequest(res, 'fecha_cambio no es una fecha valida')
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+
+    await ensureCiHistoryTable(pool)
+
+    const exists = await existsById(
+      pool.request(),
+      'Elementos_Configuracion',
+      'id_ci',
+      'id_ci',
+      id_ci
+      )
+      if (!exists) return res.status(404).json({ message: 'El CI no existe' })
+
+      const mantenimientoResult = await pool
+        .request()
+        .input('id_mantenimiento', sql.Char(10), payload.id_mantenimiento)
+        .input('id_ci', sql.VarChar(25), id_ci)
+        .input('id_tecnico_asignado', sql.Char(15), req.user?.sub)
+        .query(`
+          SELECT id_mantenimiento, tipo_mantenimiento
+          FROM Mantenimientos
+          WHERE id_mantenimiento = @id_mantenimiento
+            AND id_ci = @id_ci
+            AND id_tecnico_asignado = @id_tecnico_asignado
+        `)
+
+      const mantenimiento = mantenimientoResult.recordset?.[0]
+      if (!mantenimiento) {
+        return res.status(404).json({
+          message: 'No se encontro el mantenimiento asignado para este CI',
+        })
+      }
+
+      const tipoMantenimiento = toTrimmedString(mantenimiento.tipo_mantenimiento)
+      const origen = tipoMantenimiento.toLowerCase() === 'preventivo' ? 'Preventivo' : 'Correctivo'
+      const numeroTransaccion = `${origen === 'Preventivo' ? 'PRE' : 'COR'}-${payload.id_mantenimiento}`
+
+      await pool
+        .request()
+        .input('id_ci', sql.VarChar(25), id_ci)
+        .input('id_mantenimiento', sql.Char(10), payload.id_mantenimiento)
+        .input('fecha_cambio', sql.DateTime, parsedDate)
+        .input('numero_transaccion', sql.VarChar(40), numeroTransaccion)
+        .input('origen_transaccion', sql.VarChar(40), origen)
+        .input('tecnico', sql.VarChar(120), toTrimmedString(req.user?.sub))
+        .input('detalle_cambio', sql.VarChar(500), payload.detalle_cambio)
+        .query(`
+          INSERT INTO Historial_Cambios_CI (
+            id_ci,
+            id_mantenimiento,
+            fecha_cambio,
+            numero_transaccion,
+            origen_transaccion,
+            tecnico,
+            detalle_cambio
+          )
+          VALUES (
+            @id_ci,
+            @id_mantenimiento,
+            @fecha_cambio,
+            @numero_transaccion,
+            @origen_transaccion,
+            @tecnico,
+            @detalle_cambio
+          )
+        `)
+
+      return res.status(201).json({ message: 'Cambio registrado correctamente' })
+  } catch (err) {
+    console.error('Error en POST /api/ci/:id_ci/historial-cambios:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.post('/api/admin/ci/:id_ci/ticket-preventivo', ...requireAdmin, async (req, res) => {
+  const id_ci = toTrimmedString(req.params?.id_ci)
+  const descripcion_tarea = toTrimmedString(req.body?.descripcion_tarea)
+
+  if (!id_ci || !descripcion_tarea) {
+    return badRequest(res, 'id_ci y descripcion_tarea son obligatorios')
+  }
+
+  const pool = await getPool()
+  if (!pool) return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+
+  await ensureWorkflowColumns(pool)
+  await ensureCiHistoryTable(pool)
+
+  const transaction = new sql.Transaction(pool)
+  let transactionFinished = false
+
+  try {
+    await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE)
+
+    const exists = await existsById(
+      new sql.Request(transaction),
+      'Elementos_Configuracion',
+      'id_ci',
+      'id_ci',
+      id_ci
+    )
+    if (!exists) {
+      await transaction.rollback()
+      return res.status(404).json({ message: 'El CI no existe' })
+    }
+
+    const id_mantenimiento = await findNextMaintenanceId(new sql.Request(transaction))
+
+    await new sql.Request(transaction)
+      .input('id_mantenimiento', sql.Char(10), id_mantenimiento)
+      .input('id_ci', sql.VarChar(25), id_ci)
+      .input('fecha_mantenimiento', sql.DateTime, new Date())
+      .input('tipo_mantenimiento', sql.VarChar(50), 'Preventivo')
+      .input('descripcion_tarea', sql.VarChar(sql.MAX), descripcion_tarea)
+      .input('id_usuario_reporta', sql.Char(15), req.user?.sub)
+      .input('estado', sql.VarChar(20), 'Pendiente')
+      .query(`
+        INSERT INTO Mantenimientos (
+          id_mantenimiento,
+          id_ci,
+          fecha_mantenimiento,
+          tipo_mantenimiento,
+          descripcion_tarea,
+          id_usuario_reporta,
+          estado
+        )
+        VALUES (
+          @id_mantenimiento,
+          @id_ci,
+          @fecha_mantenimiento,
+          @tipo_mantenimiento,
+          @descripcion_tarea,
+          @id_usuario_reporta,
+          @estado
+        )
+      `)
+
+    await new sql.Request(transaction)
+      .input('id_ci', sql.VarChar(25), id_ci)
+      .input('id_mantenimiento', sql.Char(10), id_mantenimiento)
+      .input('fecha_cambio', sql.DateTime, new Date())
+      .input('numero_transaccion', sql.VarChar(40), `PRE-${id_mantenimiento}`)
+      .input('origen_transaccion', sql.VarChar(40), 'Preventivo')
+      .input('tecnico', sql.VarChar(120), toTrimmedString(req.user?.sub))
+      .input('detalle_cambio', sql.VarChar(500), `Ticket preventivo creado: ${descripcion_tarea}`)
+      .query(`
+        INSERT INTO Historial_Cambios_CI (
+          id_ci,
+          id_mantenimiento,
+          fecha_cambio,
+          numero_transaccion,
+          origen_transaccion,
+          tecnico,
+          detalle_cambio
+        )
+        VALUES (
+          @id_ci,
+          @id_mantenimiento,
+          @fecha_cambio,
+          @numero_transaccion,
+          @origen_transaccion,
+          @tecnico,
+          @detalle_cambio
+        )
+      `)
+
+    await transaction.commit()
+    transactionFinished = true
+
+    return res.status(201).json({
+      message: 'Ticket preventivo creado correctamente',
+      id_mantenimiento,
+    })
+  } catch (err) {
+    if (!transactionFinished) {
+      try {
+        await transaction.rollback()
+      } catch {}
+    }
+    console.error('Error en POST /api/admin/ci/:id_ci/ticket-preventivo:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
 app.post('/api/reportes', ...requireAnyAuth, async (req, res) => {
   const payload = {
     id_edificio: toTrimmedString(req.body?.id_edificio),
@@ -1021,7 +1326,10 @@ app.get('/api/reportes', ...requireAnyAuth, async (req, res) => {
         SELECT
           m.id_mantenimiento AS id_reporte,
           m.id_ci,
+          m.tipo_mantenimiento,
           m.descripcion_tarea AS descripcion_falla,
+          m.descripcion_solucion,
+          m.fecha_cierre,
           m.fecha_mantenimiento AS fecha_reporte,
           COALESCE(m.estado, 'Pendiente') AS estado,
           COALESCE(m.prioridad, 'Sin priorizar') AS prioridad,
@@ -1040,6 +1348,51 @@ app.get('/api/reportes', ...requireAnyAuth, async (req, res) => {
     return res.status(200).json(result.recordset)
   } catch (err) {
     console.error('Error en GET /api/reportes:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.put('/api/tecnico/servicios/:id_reporte/completar', ...requireTecnico, async (req, res) => {
+  const tecnicoId = req.user?.sub
+  const id_reporte = toTrimmedString(req.params?.id_reporte)
+  const descripcion_solucion = toTrimmedString(req.body?.descripcion_solucion)
+
+  if (!tecnicoId) return res.status(401).json({ message: 'No autorizado' })
+  if (!id_reporte || !descripcion_solucion) {
+    return badRequest(res, 'id_reporte y descripcion_solucion son obligatorios')
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+
+    await ensureWorkflowColumns(pool)
+
+    const updateResult = await pool
+      .request()
+      .input('id_reporte', sql.Char(10), id_reporte)
+      .input('id_tecnico_asignado', sql.Char(15), tecnicoId)
+      .input('descripcion_solucion', sql.VarChar(1000), descripcion_solucion)
+      .input('fecha_cierre', sql.DateTime, new Date())
+      .query(`
+        UPDATE Mantenimientos
+        SET
+          descripcion_solucion = @descripcion_solucion,
+          fecha_cierre = @fecha_cierre,
+          estado = 'Cerrado'
+        WHERE id_mantenimiento = @id_reporte
+          AND id_tecnico_asignado = @id_tecnico_asignado
+      `)
+
+    if (!updateResult.rowsAffected?.[0]) {
+      return res.status(404).json({
+        message: 'Servicio no encontrado o no asignado al tecnico actual',
+      })
+    }
+
+    return res.status(200).json({ message: 'Ticket completado correctamente' })
+  } catch (err) {
+    console.error('Error en PUT /api/tecnico/servicios/:id_reporte/completar:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
   }
 })
