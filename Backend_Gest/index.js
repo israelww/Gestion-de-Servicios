@@ -10,6 +10,9 @@ const app = express()
 const PORT = 4000
 const JWT_SECRET = process.env.JWT_SECRET || 'demo_secret'
 const CI_DEFAULT_STATUS = 'Activo'
+const ROLE_ADMIN = 'Administrador'
+const ROLE_TECNICO = 'Tecnico'
+const PRIORIDADES_VALIDAS = ['Baja', 'Media', 'Alta', 'Critica']
 
 app.use(
   cors({
@@ -181,6 +184,64 @@ function requireAuth(req, res, next) {
 }
 
 const requireAnyAuth = [requireAuth]
+const requireAdmin = [requireAuth, requireRole([ROLE_ADMIN])]
+const requireTecnico = [requireAuth, requireRole([ROLE_TECNICO])]
+
+function requireRole(rolesPermitidos) {
+  return (req, res, next) => {
+    const rol = toTrimmedString(req.user?.rol)
+    if (!rol || !rolesPermitidos.includes(rol)) {
+      return res.status(403).json({ message: 'No autorizado para esta accion' })
+    }
+    return next()
+  }
+}
+
+function isForeignKeyError(err) {
+  return Number(err?.number) === 547
+}
+
+async function findNextMaintenanceId(request) {
+  const result = await request.query(`
+    SELECT id_mantenimiento
+    FROM Mantenimientos
+    WHERE id_mantenimiento LIKE 'MT%'
+  `)
+
+  const maxSequence = (result.recordset || []).reduce((max, row) => {
+    const suffix = Number.parseInt(String(row.id_mantenimiento || '').replace(/^MT/, ''), 10)
+    return Number.isNaN(suffix) ? max : Math.max(max, suffix)
+  }, 0)
+
+  return `MT${String(maxSequence + 1).padStart(8, '0')}`
+}
+
+let workflowSchemaReady = false
+async function ensureWorkflowColumns(pool) {
+  if (workflowSchemaReady) return
+
+  await pool.request().query(`
+    IF COL_LENGTH('Mantenimientos', 'estado') IS NULL
+    BEGIN
+      ALTER TABLE Mantenimientos
+      ADD estado VARCHAR(20) NOT NULL CONSTRAINT DF_Mantenimientos_estado DEFAULT 'Pendiente'
+    END;
+
+    IF COL_LENGTH('Mantenimientos', 'prioridad') IS NULL
+    BEGIN
+      ALTER TABLE Mantenimientos
+      ADD prioridad VARCHAR(20) NULL
+    END;
+
+    IF COL_LENGTH('Mantenimientos', 'id_tecnico_asignado') IS NULL
+    BEGIN
+      ALTER TABLE Mantenimientos
+      ADD id_tecnico_asignado CHAR(15) NULL
+    END;
+  `)
+
+  workflowSchemaReady = true
+}
 
 app.get('/api/edificios', async (_req, res) => {
   try {
@@ -251,6 +312,69 @@ app.post('/api/edificios', async (req, res) => {
     })
   } catch (err) {
     console.error('Error en POST /api/edificios:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.put('/api/edificios/:id_edificio', ...requireAdmin, async (req, res) => {
+  const id_edificio = toTrimmedString(req.params?.id_edificio)
+  const nombre_edificio = toTrimmedString(req.body?.nombre_edificio)
+  const descripcion_edificio = toTrimmedString(req.body?.descripcion_edificio)
+
+  if (!id_edificio || !nombre_edificio || !descripcion_edificio) {
+    return badRequest(res, 'id_edificio, nombre_edificio y descripcion_edificio son obligatorios')
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+
+    const updateResult = await pool
+      .request()
+      .input('id_edificio', sql.Char(10), id_edificio)
+      .input('nombre_edificio', sql.VarChar(50), nombre_edificio)
+      .input('descripcion_edificio', sql.VarChar(255), descripcion_edificio)
+      .query(`
+        UPDATE Edificios
+        SET nombre_edificio = @nombre_edificio,
+            descripcion_edificio = @descripcion_edificio
+        WHERE id_edificio = @id_edificio
+      `)
+
+    if (!updateResult.rowsAffected?.[0]) {
+      return res.status(404).json({ message: 'El edificio no existe' })
+    }
+
+    return res.status(200).json({ message: 'Edificio actualizado correctamente' })
+  } catch (err) {
+    console.error('Error en PUT /api/edificios/:id_edificio:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.delete('/api/edificios/:id_edificio', ...requireAdmin, async (req, res) => {
+  const id_edificio = toTrimmedString(req.params?.id_edificio)
+  if (!id_edificio) return badRequest(res, 'El id_edificio es obligatorio')
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+
+    const deleteResult = await pool
+      .request()
+      .input('id_edificio', sql.Char(10), id_edificio)
+      .query(`DELETE FROM Edificios WHERE id_edificio = @id_edificio`)
+
+    if (!deleteResult.rowsAffected?.[0]) {
+      return res.status(404).json({ message: 'El edificio no existe' })
+    }
+
+    return res.status(200).json({ message: 'Edificio eliminado correctamente' })
+  } catch (err) {
+    if (isForeignKeyError(err)) {
+      return res.status(409).json({ message: 'No se puede eliminar: tiene registros relacionados' })
+    }
+    console.error('Error en DELETE /api/edificios/:id_edificio:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
   }
 })
@@ -353,6 +477,66 @@ app.post('/api/sublocalizaciones', async (req, res) => {
     })
   } catch (err) {
     console.error('Error en POST /api/sublocalizaciones:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.put('/api/sublocalizaciones/:id_sublocalizacion', ...requireAdmin, async (req, res) => {
+  const id_sublocalizacion = toTrimmedString(req.params?.id_sublocalizacion)
+  const nombre_sublocalizacion = toTrimmedString(req.body?.nombre_sublocalizacion)
+
+  if (!id_sublocalizacion || !nombre_sublocalizacion) {
+    return badRequest(res, 'id_sublocalizacion y nombre_sublocalizacion son obligatorios')
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+
+    const updateResult = await pool
+      .request()
+      .input('id_sublocalizacion', sql.Char(10), id_sublocalizacion)
+      .input('nombre_sublocalizacion', sql.VarChar(100), nombre_sublocalizacion)
+      .query(`
+        UPDATE Sublocalizaciones
+        SET nombre_sublocalizacion = @nombre_sublocalizacion
+        WHERE id_sublocalizacion = @id_sublocalizacion
+      `)
+
+    if (!updateResult.rowsAffected?.[0]) {
+      return res.status(404).json({ message: 'La sublocalizacion no existe' })
+    }
+
+    return res.status(200).json({ message: 'Sublocalizacion actualizada correctamente' })
+  } catch (err) {
+    console.error('Error en PUT /api/sublocalizaciones/:id_sublocalizacion:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.delete('/api/sublocalizaciones/:id_sublocalizacion', ...requireAdmin, async (req, res) => {
+  const id_sublocalizacion = toTrimmedString(req.params?.id_sublocalizacion)
+  if (!id_sublocalizacion) return badRequest(res, 'El id_sublocalizacion es obligatorio')
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+
+    const deleteResult = await pool
+      .request()
+      .input('id_sublocalizacion', sql.Char(10), id_sublocalizacion)
+      .query(`DELETE FROM Sublocalizaciones WHERE id_sublocalizacion = @id_sublocalizacion`)
+
+    if (!deleteResult.rowsAffected?.[0]) {
+      return res.status(404).json({ message: 'La sublocalizacion no existe' })
+    }
+
+    return res.status(200).json({ message: 'Sublocalizacion eliminada correctamente' })
+  } catch (err) {
+    if (isForeignKeyError(err)) {
+      return res.status(409).json({ message: 'No se puede eliminar: tiene registros relacionados' })
+    }
+    console.error('Error en DELETE /api/sublocalizaciones/:id_sublocalizacion:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
   }
 })
@@ -796,7 +980,7 @@ app.post('/api/ci', async (req, res) => {
     }
 
     await new sql.Request(transaction)
-      .input('id_ci', sql.Char(10), finalIdCi)
+      .input('id_ci', sql.VarChar(25), finalIdCi)
       .input('numero_serie', sql.VarChar(50), payload.numero_serie)
       .input('nombre_equipo', sql.VarChar(100), payload.nombre_equipo || null)
       .input('modelo', sql.VarChar(100), payload.modelo || null)
@@ -863,6 +1047,101 @@ app.post('/api/ci', async (req, res) => {
   }
 })
 
+app.put('/api/ci/:id_ci', ...requireAdmin, async (req, res) => {
+  const id_ci = toTrimmedString(req.params?.id_ci)
+  const payload = {
+    numero_serie: toTrimmedString(req.body?.numero_serie),
+    nombre_equipo: toTrimmedString(req.body?.nombre_equipo),
+    modelo: toTrimmedString(req.body?.modelo),
+    id_marca: toTrimmedString(req.body?.id_marca),
+    id_usuario_responsable: toTrimmedString(req.body?.id_usuario_responsable),
+  }
+
+  if (!id_ci || !payload.numero_serie || !payload.id_marca) {
+    return badRequest(res, 'id_ci, numero_serie e id_marca son obligatorios')
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+
+    const existingResult = await pool
+      .request()
+      .input('id_ci', sql.VarChar(25), id_ci)
+      .query(`
+        SELECT id_ci
+        FROM Elementos_Configuracion
+        WHERE id_ci = @id_ci
+      `)
+    if (!existingResult.recordset?.[0]) {
+      return res.status(404).json({ message: 'El CI no existe' })
+    }
+
+    if (payload.id_usuario_responsable) {
+      const usuarioExists = await existsById(
+        pool.request(),
+        'Usuarios',
+        'id_usuario',
+        'id_usuario',
+        payload.id_usuario_responsable
+      )
+      if (!usuarioExists) {
+        return res.status(404).json({ message: 'El usuario responsable no existe' })
+      }
+    }
+
+    await pool
+      .request()
+      .input('id_ci', sql.VarChar(25), id_ci)
+      .input('numero_serie', sql.VarChar(50), payload.numero_serie)
+      .input('nombre_equipo', sql.VarChar(100), payload.nombre_equipo || null)
+      .input('modelo', sql.VarChar(100), payload.modelo || null)
+      .input('id_marca', sql.Char(10), payload.id_marca)
+      .input('id_usuario_responsable', sql.Char(15), payload.id_usuario_responsable || null)
+      .query(`
+        UPDATE Elementos_Configuracion
+        SET numero_serie = @numero_serie,
+            nombre_equipo = @nombre_equipo,
+            modelo = @modelo,
+            id_marca = @id_marca,
+            id_usuario_responsable = @id_usuario_responsable
+        WHERE id_ci = @id_ci
+      `)
+
+    return res.status(200).json({ message: 'CI actualizado correctamente' })
+  } catch (err) {
+    console.error('Error en PUT /api/ci/:id_ci:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.delete('/api/ci/:id_ci', ...requireAdmin, async (req, res) => {
+  const id_ci = toTrimmedString(req.params?.id_ci)
+  if (!id_ci) return badRequest(res, 'El id_ci es obligatorio')
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+
+    const deleteResult = await pool
+      .request()
+      .input('id_ci', sql.VarChar(25), id_ci)
+      .query(`DELETE FROM Elementos_Configuracion WHERE id_ci = @id_ci`)
+
+    if (!deleteResult.rowsAffected?.[0]) {
+      return res.status(404).json({ message: 'El CI no existe' })
+    }
+
+    return res.status(200).json({ message: 'CI eliminado correctamente' })
+  } catch (err) {
+    if (isForeignKeyError(err)) {
+      return res.status(409).json({ message: 'No se puede eliminar: tiene registros relacionados' })
+    }
+    console.error('Error en DELETE /api/ci/:id_ci:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
 app.post('/api/reportes', ...requireAnyAuth, async (req, res) => {
   const payload = {
     id_edificio: toTrimmedString(req.body?.id_edificio),
@@ -883,6 +1162,8 @@ app.post('/api/reportes', ...requireAnyAuth, async (req, res) => {
     return res.status(500).json({ message: 'Backend sin configuración de BD' })
   }
 
+  await ensureWorkflowColumns(pool)
+
   const transaction = new sql.Transaction(pool)
   let transactionFinished = false
 
@@ -890,88 +1171,65 @@ app.post('/api/reportes', ...requireAnyAuth, async (req, res) => {
     await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE)
     const request = new sql.Request(transaction)
 
-    const buildingExists = await existsById(
-      request,
-      'Edificios',
-      'id_edificio',
-      'id_edificio',
-      payload.id_edificio
-    )
-    if (!buildingExists) {
-      await transaction.rollback()
-      return res.status(404).json({ message: 'El edificio no existe' })
-    }
-
-    const subCheck = await new sql.Request(transaction)
-      .input('id_sublocalizacion', sql.Char(10), payload.id_sublocalizacion)
-      .query(
-        `
-        SELECT id_sublocalizacion, id_edificio
-        FROM Sublocalizaciones
-        WHERE id_sublocalizacion = @id_sublocalizacion
-        `
-      )
-
-    const sub = subCheck.recordset?.[0]
-    if (!sub) {
-      await transaction.rollback()
-      return res.status(404).json({ message: 'La sublocalizacion no existe' })
-    }
-    if (toTrimmedString(sub.id_edificio) !== payload.id_edificio) {
-      await transaction.rollback()
-      return res.status(409).json({ message: 'La sublocalizacion no pertenece al edificio' })
-    }
-
-    const ciCheck = await new sql.Request(transaction)
+    const ciCheck = await request
       .input('id_ci', sql.VarChar(25), payload.id_ci)
-      .query(
-        `
-        SELECT id_ci, id_sublocalizacion
-        FROM Elementos_Configuracion
-        WHERE id_ci = @id_ci
-        `
-      )
-
-    const ci = ciCheck.recordset?.[0]
-    if (!ci) {
-      await transaction.rollback()
-      return res.status(404).json({ message: 'El CI no existe' })
-    }
-    if (toTrimmedString(ci.id_sublocalizacion) !== payload.id_sublocalizacion) {
-      await transaction.rollback()
-      return res.status(409).json({ message: 'El CI no pertenece a la sublocalizacion' })
-    }
-
-    const userId = req.user?.sub
-    await new sql.Request(transaction)
+      .input('id_sublocalizacion', sql.Char(10), payload.id_sublocalizacion)
       .input('id_edificio', sql.Char(10), payload.id_edificio)
-      .input('id_sublocalizacion', sql.Char(10), payload.id_sublocalizacion)
+      .query(`
+        SELECT ci.id_ci
+        FROM Elementos_Configuracion ci
+        JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
+        WHERE ci.id_ci = @id_ci
+          AND s.id_sublocalizacion = @id_sublocalizacion
+          AND s.id_edificio = @id_edificio
+      `)
+
+    if (!ciCheck.recordset?.[0]) {
+      await transaction.rollback()
+      return res.status(409).json({
+        message: 'El CI no pertenece a la sublocalizacion y edificio seleccionados',
+      })
+    }
+
+    const id_mantenimiento = await findNextMaintenanceId(new sql.Request(transaction))
+
+    await new sql.Request(transaction)
+      .input('id_mantenimiento', sql.Char(10), id_mantenimiento)
       .input('id_ci', sql.VarChar(25), payload.id_ci)
-      .input('descripcion_falla', sql.VarChar(1000), payload.descripcion_falla)
-      .input('id_usuario_reporta', sql.Char(15), userId)
-      .query(
-        `
-        INSERT INTO Reportes (
-          id_edificio,
-          id_sublocalizacion,
+      .input('fecha_mantenimiento', sql.DateTime, new Date())
+      .input('tipo_mantenimiento', sql.VarChar(50), 'Correctivo')
+      .input('descripcion_tarea', sql.VarChar(sql.MAX), payload.descripcion_falla)
+      .input('id_usuario_reporta', sql.Char(15), req.user?.sub)
+      .input('estado', sql.VarChar(20), 'Pendiente')
+      .query(`
+        INSERT INTO Mantenimientos (
+          id_mantenimiento,
           id_ci,
-          descripcion_falla,
-          id_usuario_reporta
+          fecha_mantenimiento,
+          tipo_mantenimiento,
+          descripcion_tarea,
+          id_usuario_reporta,
+          estado
         )
         VALUES (
-          @id_edificio,
-          @id_sublocalizacion,
+          @id_mantenimiento,
           @id_ci,
-          @descripcion_falla,
-          @id_usuario_reporta
+          @fecha_mantenimiento,
+          @tipo_mantenimiento,
+          @descripcion_tarea,
+          @id_usuario_reporta,
+          @estado
         )
-        `
-      )
+      `)
 
     await transaction.commit()
     transactionFinished = true
 
-    return res.status(201).json({ message: 'Reporte creado correctamente' })
+    return res.status(201).json({
+      message: 'Reporte creado correctamente',
+      id_reporte: id_mantenimiento,
+      estado: 'Pendiente',
+    })
   } catch (err) {
     if (!transactionFinished) {
       try {
@@ -1017,29 +1275,30 @@ app.get('/api/reportes', ...requireAnyAuth, async (req, res) => {
       return res.status(500).json({ message: 'Backend sin configuración de BD' })
     }
 
+    await ensureWorkflowColumns(pool)
+
     const result = await pool
       .request()
       .input('id_usuario_reporta', sql.Char(15), userId)
-      .query(
-        `
+      .query(`
         SELECT
-          r.id_reporte,
-          r.id_ci,
-          r.descripcion_falla,
-          r.fecha_reporte,
-          r.estado,
+          m.id_mantenimiento AS id_reporte,
+          m.id_ci,
+          m.descripcion_tarea AS descripcion_falla,
+          m.fecha_mantenimiento AS fecha_reporte,
+          COALESCE(m.estado, 'Pendiente') AS estado,
+          COALESCE(m.prioridad, 'Sin priorizar') AS prioridad,
           e.nombre_edificio,
           s.nombre_sublocalizacion,
           ci.nombre_equipo,
           ci.numero_serie
-        FROM Reportes r
-        JOIN Edificios e ON e.id_edificio = r.id_edificio
-        JOIN Sublocalizaciones s ON s.id_sublocalizacion = r.id_sublocalizacion
-        LEFT JOIN Elementos_Configuracion ci ON ci.id_ci = r.id_ci
-        WHERE r.id_usuario_reporta = @id_usuario_reporta
-        ORDER BY r.fecha_reporte DESC, r.id_reporte DESC
-        `
-      )
+        FROM Mantenimientos m
+        JOIN Elementos_Configuracion ci ON ci.id_ci = m.id_ci
+        JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
+        JOIN Edificios e ON e.id_edificio = s.id_edificio
+        WHERE m.id_usuario_reporta = @id_usuario_reporta
+        ORDER BY m.fecha_mantenimiento DESC, m.id_mantenimiento DESC
+      `)
 
     return res.status(200).json(result.recordset)
   } catch (err) {
@@ -1049,13 +1308,11 @@ app.get('/api/reportes', ...requireAnyAuth, async (req, res) => {
 })
 
 app.get('/api/reportes/:id_reporte', ...requireAnyAuth, async (req, res) => {
-  const id_reporte = Number.parseInt(String(req.params?.id_reporte || ''), 10)
+  const id_reporte = toTrimmedString(req.params?.id_reporte)
   const userId = req.user?.sub
 
   if (!userId) return res.status(401).json({ message: 'No autorizado' })
-  if (Number.isNaN(id_reporte)) {
-    return badRequest(res, 'El id_reporte es obligatorio')
-  }
+  if (!id_reporte) return badRequest(res, 'El id_reporte es obligatorio')
 
   try {
     const pool = await getPool()
@@ -1063,42 +1320,373 @@ app.get('/api/reportes/:id_reporte', ...requireAnyAuth, async (req, res) => {
       return res.status(500).json({ message: 'Backend sin configuración de BD' })
     }
 
+    await ensureWorkflowColumns(pool)
+
     const result = await pool
       .request()
-      .input('id_reporte', sql.Int, id_reporte)
+      .input('id_reporte', sql.Char(10), id_reporte)
       .input('id_usuario_reporta', sql.Char(15), userId)
-      .query(
-        `
+      .query(`
         SELECT
-          r.id_reporte,
-          r.id_edificio,
-          r.id_sublocalizacion,
-          r.id_ci,
-          r.descripcion_falla,
-          r.fecha_reporte,
-          r.estado,
+          m.id_mantenimiento AS id_reporte,
+          e.id_edificio,
+          s.id_sublocalizacion,
+          m.id_ci,
+          m.descripcion_tarea AS descripcion_falla,
+          m.fecha_mantenimiento AS fecha_reporte,
+          COALESCE(m.estado, 'Pendiente') AS estado,
+          COALESCE(m.prioridad, 'Sin priorizar') AS prioridad,
+          e.nombre_edificio,
+          s.nombre_sublocalizacion,
+          ci.nombre_equipo,
+          ci.numero_serie,
+          u.nombre_completo AS usuario_reporta,
+          t.nombre_completo AS tecnico_asignado
+        FROM Mantenimientos m
+        JOIN Elementos_Configuracion ci ON ci.id_ci = m.id_ci
+        JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
+        JOIN Edificios e ON e.id_edificio = s.id_edificio
+        LEFT JOIN Usuarios u ON u.id_usuario = m.id_usuario_reporta
+        LEFT JOIN Usuarios t ON t.id_usuario = m.id_tecnico_asignado
+        WHERE m.id_mantenimiento = @id_reporte
+          AND m.id_usuario_reporta = @id_usuario_reporta
+      `)
+
+    const row = result.recordset?.[0]
+    if (!row) return res.status(404).json({ message: 'Reporte no encontrado' })
+
+    return res.status(200).json(row)
+  } catch (err) {
+    console.error('Error en GET /api/reportes/:id_reporte:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.get('/api/admin/reportes/pendientes', ...requireAdmin, async (_req, res) => {
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    await ensureWorkflowColumns(pool)
+
+    const result = await pool.request().query(`
+      SELECT
+        m.id_mantenimiento AS id_reporte,
+        m.id_ci,
+        m.descripcion_tarea AS descripcion_falla,
+        m.fecha_mantenimiento AS fecha_reporte,
+        COALESCE(m.estado, 'Pendiente') AS estado,
+        COALESCE(m.prioridad, 'Sin priorizar') AS prioridad,
+        e.nombre_edificio,
+        s.nombre_sublocalizacion,
+        ci.nombre_equipo,
+        ci.numero_serie,
+        u.id_usuario AS id_usuario_reporta,
+        u.nombre_completo AS usuario_reporta
+      FROM Mantenimientos m
+      JOIN Elementos_Configuracion ci ON ci.id_ci = m.id_ci
+      JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
+      JOIN Edificios e ON e.id_edificio = s.id_edificio
+      LEFT JOIN Usuarios u ON u.id_usuario = m.id_usuario_reporta
+      WHERE COALESCE(m.estado, 'Pendiente') = 'Pendiente'
+      ORDER BY m.fecha_mantenimiento ASC, m.id_mantenimiento ASC
+    `)
+
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/admin/reportes/pendientes:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.put('/api/admin/reportes/:id_reporte/asignacion', ...requireAdmin, async (req, res) => {
+  const id_reporte = toTrimmedString(req.params?.id_reporte)
+  const prioridad = toTrimmedString(req.body?.prioridad)
+  const id_tecnico_asignado = toTrimmedString(req.body?.id_tecnico_asignado)
+
+  if (!id_reporte || !prioridad || !id_tecnico_asignado) {
+    return badRequest(res, 'id_reporte, prioridad e id_tecnico_asignado son obligatorios')
+  }
+  if (!PRIORIDADES_VALIDAS.includes(prioridad)) {
+    return badRequest(res, 'La prioridad no es valida')
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    await ensureWorkflowColumns(pool)
+
+    const tecnicoResult = await pool
+      .request()
+      .input('id_tecnico_asignado', sql.Char(15), id_tecnico_asignado)
+      .query(`
+        SELECT u.id_usuario
+        FROM Usuarios u
+        JOIN Roles r ON r.id_rol = u.id_rol
+        WHERE u.id_usuario = @id_tecnico_asignado
+          AND r.nombre_rol = '${ROLE_TECNICO}'
+      `)
+    if (!tecnicoResult.recordset?.[0]) {
+      return res.status(404).json({ message: 'El tecnico seleccionado no existe' })
+    }
+
+    const updateResult = await pool
+      .request()
+      .input('id_reporte', sql.Char(10), id_reporte)
+      .input('prioridad', sql.VarChar(20), prioridad)
+      .input('id_tecnico_asignado', sql.Char(15), id_tecnico_asignado)
+      .query(`
+        UPDATE Mantenimientos
+        SET prioridad = @prioridad,
+            id_tecnico_asignado = @id_tecnico_asignado,
+            estado = 'Asignado'
+        WHERE id_mantenimiento = @id_reporte
+      `)
+
+    if (!updateResult.rowsAffected?.[0]) {
+      return res.status(404).json({ message: 'Reporte no encontrado' })
+    }
+
+    return res.status(200).json({ message: 'Reporte asignado correctamente' })
+  } catch (err) {
+    console.error('Error en PUT /api/admin/reportes/:id_reporte/asignacion:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.get('/api/tecnico/servicios', ...requireTecnico, async (req, res) => {
+  const tecnicoId = req.user?.sub
+  if (!tecnicoId) return res.status(401).json({ message: 'No autorizado' })
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    await ensureWorkflowColumns(pool)
+
+    const result = await pool
+      .request()
+      .input('id_tecnico_asignado', sql.Char(15), tecnicoId)
+      .query(`
+        SELECT
+          m.id_mantenimiento AS id_reporte,
+          m.id_ci,
+          m.descripcion_tarea AS descripcion_falla,
+          m.fecha_mantenimiento AS fecha_reporte,
+          COALESCE(m.estado, 'Pendiente') AS estado,
+          COALESCE(m.prioridad, 'Sin priorizar') AS prioridad,
           e.nombre_edificio,
           s.nombre_sublocalizacion,
           ci.nombre_equipo,
           ci.numero_serie,
           u.nombre_completo AS usuario_reporta
-        FROM Reportes r
-        JOIN Edificios e ON e.id_edificio = r.id_edificio
-        JOIN Sublocalizaciones s ON s.id_sublocalizacion = r.id_sublocalizacion
-        LEFT JOIN Elementos_Configuracion ci ON ci.id_ci = r.id_ci
-        LEFT JOIN Usuarios u ON u.id_usuario = r.id_usuario_reporta
-        WHERE r.id_reporte = @id_reporte AND r.id_usuario_reporta = @id_usuario_reporta
-        `
-      )
+        FROM Mantenimientos m
+        JOIN Elementos_Configuracion ci ON ci.id_ci = m.id_ci
+        JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
+        JOIN Edificios e ON e.id_edificio = s.id_edificio
+        LEFT JOIN Usuarios u ON u.id_usuario = m.id_usuario_reporta
+        WHERE m.id_tecnico_asignado = @id_tecnico_asignado
+        ORDER BY m.fecha_mantenimiento DESC, m.id_mantenimiento DESC
+      `)
 
-    const row = result.recordset?.[0]
-    if (!row) {
-      return res.status(404).json({ message: 'Reporte no encontrado' })
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/tecnico/servicios:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.get('/api/usuarios/tecnicos', ...requireAdmin, async (_req, res) => {
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    const result = await pool.request().query(`
+      SELECT u.id_usuario, u.nombre_completo
+      FROM Usuarios u
+      JOIN Roles r ON r.id_rol = u.id_rol
+      WHERE r.nombre_rol = '${ROLE_TECNICO}'
+      ORDER BY u.nombre_completo
+    `)
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/usuarios/tecnicos:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.get('/api/roles', ...requireAdmin, async (_req, res) => {
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuraciÃ³n de BD' })
+
+    const result = await pool.request().query(`
+      SELECT id_rol, nombre_rol
+      FROM Roles
+      ORDER BY nombre_rol
+    `)
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/roles:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.get('/api/usuarios', ...requireAdmin, async (_req, res) => {
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    const result = await pool.request().query(`
+      SELECT
+        u.id_usuario,
+        u.nombre_completo,
+        u.correo,
+        u.id_rol,
+        r.nombre_rol
+      FROM Usuarios u
+      JOIN Roles r ON r.id_rol = u.id_rol
+      ORDER BY u.nombre_completo
+    `)
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/usuarios:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.post('/api/usuarios', ...requireAdmin, async (req, res) => {
+  const payload = {
+    id_usuario: toTrimmedString(req.body?.id_usuario),
+    nombre_completo: toTrimmedString(req.body?.nombre_completo),
+    correo: toTrimmedString(req.body?.correo),
+    password: toTrimmedString(req.body?.password),
+    id_rol: toTrimmedString(req.body?.id_rol),
+  }
+
+  if (!payload.id_usuario || !payload.nombre_completo || !payload.correo || !payload.password || !payload.id_rol) {
+    return badRequest(res, 'id_usuario, nombre_completo, correo, password e id_rol son obligatorios')
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    const duplicatedUser = await existsById(
+      pool.request(),
+      'Usuarios',
+      'id_usuario',
+      'id_usuario',
+      payload.id_usuario
+    )
+    if (duplicatedUser) return res.status(409).json({ message: 'El id_usuario ya existe' })
+
+    const duplicatedMail = await pool
+      .request()
+      .input('correo', sql.VarChar(100), payload.correo)
+      .query(`SELECT 1 AS found FROM Usuarios WHERE correo = @correo`)
+    if (duplicatedMail.recordset?.[0]?.found) {
+      return res.status(409).json({ message: 'El correo ya existe' })
     }
 
-    return res.status(200).json(row)
+    const password_hash = await bcrypt.hash(payload.password, 10)
+    await pool
+      .request()
+      .input('id_usuario', sql.Char(15), payload.id_usuario)
+      .input('nombre_completo', sql.VarChar(150), payload.nombre_completo)
+      .input('correo', sql.VarChar(100), payload.correo)
+      .input('password_hash', sql.VarChar(255), password_hash)
+      .input('id_rol', sql.Char(10), payload.id_rol)
+      .query(`
+        INSERT INTO Usuarios (id_usuario, nombre_completo, correo, password_hash, id_rol)
+        VALUES (@id_usuario, @nombre_completo, @correo, @password_hash, @id_rol)
+      `)
+
+    return res.status(201).json({ message: 'Usuario creado correctamente' })
   } catch (err) {
-    console.error('Error en GET /api/reportes/:id_reporte:', err)
+    console.error('Error en POST /api/usuarios:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.put('/api/usuarios/:id_usuario', ...requireAdmin, async (req, res) => {
+  const id_usuario = toTrimmedString(req.params?.id_usuario)
+  const payload = {
+    nombre_completo: toTrimmedString(req.body?.nombre_completo),
+    correo: toTrimmedString(req.body?.correo),
+    password: toTrimmedString(req.body?.password),
+    id_rol: toTrimmedString(req.body?.id_rol),
+  }
+
+  if (!id_usuario || !payload.nombre_completo || !payload.correo || !payload.id_rol) {
+    return badRequest(res, 'id_usuario, nombre_completo, correo e id_rol son obligatorios')
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    const request = pool
+      .request()
+      .input('id_usuario', sql.Char(15), id_usuario)
+      .input('nombre_completo', sql.VarChar(150), payload.nombre_completo)
+      .input('correo', sql.VarChar(100), payload.correo)
+      .input('id_rol', sql.Char(10), payload.id_rol)
+
+    let setPasswordClause = ''
+    if (payload.password) {
+      const password_hash = await bcrypt.hash(payload.password, 10)
+      request.input('password_hash', sql.VarChar(255), password_hash)
+      setPasswordClause = ', password_hash = @password_hash'
+    }
+
+    const result = await request.query(`
+      UPDATE Usuarios
+      SET nombre_completo = @nombre_completo,
+          correo = @correo,
+          id_rol = @id_rol
+          ${setPasswordClause}
+      WHERE id_usuario = @id_usuario
+    `)
+
+    if (!result.rowsAffected?.[0]) {
+      return res.status(404).json({ message: 'Usuario no encontrado' })
+    }
+
+    return res.status(200).json({ message: 'Usuario actualizado correctamente' })
+  } catch (err) {
+    console.error('Error en PUT /api/usuarios/:id_usuario:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.delete('/api/usuarios/:id_usuario', ...requireAdmin, async (req, res) => {
+  const id_usuario = toTrimmedString(req.params?.id_usuario)
+  if (!id_usuario) return badRequest(res, 'El id_usuario es obligatorio')
+  if (id_usuario === req.user?.sub) {
+    return res.status(409).json({ message: 'No puedes eliminar tu propio usuario' })
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    const result = await pool
+      .request()
+      .input('id_usuario', sql.Char(15), id_usuario)
+      .query(`DELETE FROM Usuarios WHERE id_usuario = @id_usuario`)
+
+    if (!result.rowsAffected?.[0]) {
+      return res.status(404).json({ message: 'Usuario no encontrado' })
+    }
+
+    return res.status(200).json({ message: 'Usuario eliminado correctamente' })
+  } catch (err) {
+    if (isForeignKeyError(err)) {
+      return res.status(409).json({ message: 'No se puede eliminar: tiene registros relacionados' })
+    }
+    console.error('Error en DELETE /api/usuarios/:id_usuario:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
   }
 })
@@ -1126,6 +1714,7 @@ app.post('/api/login', async (req, res) => {
         `
         SELECT
           u.id_usuario,
+          u.id_rol,
           u.correo,
           u.password_hash,
           r.nombre_rol
@@ -1146,16 +1735,15 @@ app.post('/api/login', async (req, res) => {
     }
 
     const rol = row.nombre_rol
-    const token = jwt.sign(
-      { sub: row.id_usuario, correo: row.correo, rol },
-      JWT_SECRET,
-      { expiresIn: '1h' }
-    )
+    const token = jwt.sign({ sub: row.id_usuario, correo: row.correo, rol, id_rol: row.id_rol }, JWT_SECRET, {
+      expiresIn: '1h',
+    })
 
     return res.status(200).json({
       message: 'Login exitoso',
       token,
       rol,
+      id_rol: row.id_rol,
     })
   } catch (err) {
     console.error('Error en /api/login:', err)
@@ -1171,6 +1759,7 @@ app.get('/api/me', (req, res) => {
     const payload = jwt.verify(token, JWT_SECRET)
     return res.status(200).json({
       id_usuario: payload.sub,
+      id_rol: payload.id_rol,
       correo: payload.correo,
       rol: payload.rol,
     })

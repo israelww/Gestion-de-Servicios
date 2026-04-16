@@ -17,7 +17,7 @@ create table Edificios(
 	)
 create table marcas(
 	id_marca char(10) PRIMARY KEY,
-	nombre_marca varchar(50) NOT NULL,
+	nombre_marca varchar(50) NOT NULL
 	)
 -- 2. Ubicaciones y Tipos
 CREATE TABLE Sublocalizaciones (
@@ -61,6 +61,9 @@ CREATE TABLE Mantenimientos (
     fecha_mantenimiento DATETIME,
     tipo_mantenimiento VARCHAR(50), -- Preventivo, Correctivo
     descripcion_tarea TEXT,
+    estado VARCHAR(20) DEFAULT 'Pendiente', -- Pendiente, Asignado, En Proceso, Cerrado
+    prioridad VARCHAR(20), -- Baja, Media, Alta, Critica
+    id_tecnico_asignado CHAR(15) REFERENCES Usuarios(id_usuario),
     tecnico_externo VARCHAR(100), -- Por si no es un usuario del sistema
     costo DECIMAL(10, 2),
     id_usuario_reporta CHAR(15) REFERENCES Usuarios(id_usuario)

@@ -6,7 +6,7 @@ import { getToken } from "../../auth/storage";
 const API_BASE_URL = "http://localhost:4000/api";
 
 interface ReporteDetalle {
-  id_reporte: number;
+  id_reporte: string;
   id_edificio: string;
   id_sublocalizacion: string;
   id_ci: string;

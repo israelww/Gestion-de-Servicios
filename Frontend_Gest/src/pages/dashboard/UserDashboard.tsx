@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 const API_BASE_URL = "http://localhost:4000/api";
 
 interface Reporte {
-  id_reporte: number;
+  id_reporte: string;
   id_ci: string;
   descripcion_falla: string;
   fecha_reporte: string;
