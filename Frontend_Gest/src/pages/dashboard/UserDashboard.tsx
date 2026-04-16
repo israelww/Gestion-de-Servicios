@@ -12,6 +12,10 @@ interface Reporte {
   descripcion_falla: string;
   fecha_reporte: string;
   estado: string;
+  tecnico_asignado: string | null;
+  calificacion_servicio: number | null;
+  comentario_valoracion: string | null;
+  fecha_valoracion: string | null;
   nombre_edificio: string;
   nombre_sublocalizacion: string;
   nombre_equipo: string | null;
@@ -59,35 +63,23 @@ export default function UserDashboard() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const navigate = useNavigate();
 
+  const loadReportes = async () => {
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const response = await axios.get<Reporte[]>(`${API_BASE_URL}/reportes`, {
+        headers: headers(),
+      });
+      setReportes(response.data || []);
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, "No se pudieron cargar los reportes."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    let isMounted = true;
-
-    const loadReportes = async () => {
-      try {
-        setLoading(true);
-        setErrorMessage(null);
-        const response = await axios.get<Reporte[]>(`${API_BASE_URL}/reportes`, {
-          headers: headers(),
-        });
-        if (isMounted) {
-          setReportes(response.data || []);
-        }
-      } catch (error) {
-        if (isMounted) {
-          setErrorMessage(getApiErrorMessage(error, "No se pudieron cargar los reportes."));
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
     void loadReportes();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
 
   return (
@@ -105,7 +97,6 @@ export default function UserDashboard() {
           {errorMessage}
         </div>
       ) : null}
-
       {loading ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-600">
           Cargando reportes...
