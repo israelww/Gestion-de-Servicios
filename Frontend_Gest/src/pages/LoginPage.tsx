@@ -19,7 +19,7 @@ interface LoginResponse {
 
 function routeForRole(rol: UserRole): string {
   if (rol === 'Administrador') return '/admin';
-  if (rol === 'Tecnico') return '/tecnico';
+  if (rol === 'Tecnico') return '/tecnico/mis-servicios';
   return '/usuario/dashboard';
 }
 

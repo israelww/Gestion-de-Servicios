@@ -154,7 +154,7 @@ export default function Sidebar({
         <div className="mt-auto pt-4">
           <button type="button" style={logoutStyle} onClick={handleLogout}>
             <LogOut className="h-5 w-5" />
-            Cerrar sesion
+            Cerrar Sesion
           </button>
         </div>
       </div>

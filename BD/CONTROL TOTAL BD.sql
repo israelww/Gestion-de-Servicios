@@ -17,7 +17,7 @@ create table Edificios(
 	)
 create table marcas(
 	id_marca char(10) PRIMARY KEY,
-	nombre_marca varchar(50) NOT NULL,
+	nombre_marca varchar(50) NOT NULL
 	)
 -- 2. Ubicaciones y Tipos
 CREATE TABLE Sublocalizaciones (
@@ -42,7 +42,7 @@ CREATE TABLE Usuarios (
 
 -- 4. Elementos de Configuraci�n (El n�cleo)
 CREATE TABLE Elementos_Configuracion (
-    id_ci char(10) PRIMARY KEY,
+    id_ci VARCHAR(25) PRIMARY KEY,
     numero_serie VARCHAR(50) UNIQUE NOT NULL,
     nombre_equipo VARCHAR(100),
     modelo VARCHAR(100),
@@ -57,10 +57,13 @@ CREATE TABLE Elementos_Configuracion (
 -- 5. NUEVA: Tabla de Mantenimientos (Lo que te faltaba)
 CREATE TABLE Mantenimientos (
     id_mantenimiento char(10) PRIMARY KEY,
-    id_ci char(10) REFERENCES Elementos_Configuracion(id_ci),
-    fecha_mantenimiento DATETIME,
-    tipo_mantenimiento VARCHAR(50), -- Preventivo, Correctivo
+    id_ci VARCHAR(25) REFERENCES Elementos_Configuracion(id_ci),
+    fecha_mantenimiento DATETIME DEFAULT GETDATE(),
+    tipo_mantenimiento VARCHAR(50) DEFAULT 'Correctivo', -- Preventivo, Correctivo
     descripcion_tarea TEXT,
+    estado VARCHAR(20) DEFAULT 'Pendiente', -- Pendiente, Asignado, En Proceso, Cerrado
+    prioridad VARCHAR(20), -- Baja, Media, Alta, Critica
+    id_tecnico_asignado CHAR(15) REFERENCES Usuarios(id_usuario),
     tecnico_externo VARCHAR(100), -- Por si no es un usuario del sistema
     costo DECIMAL(10, 2),
     id_usuario_reporta CHAR(15) REFERENCES Usuarios(id_usuario)
