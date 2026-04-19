@@ -3,9 +3,6 @@ import axios from "axios";
 import { getToken } from "../auth/storage";
 
 const API_BASE_URL = "http://localhost:4000/api";
-const PRIORIDADES = ["Baja", "Media", "Alta", "Critica"] as const;
-
-type Prioridad = (typeof PRIORIDADES)[number];
 
 interface ReportePendiente {
   id_reporte: string;
@@ -51,12 +48,11 @@ export default function AdminInbox() {
   const [errorMessage, setErrorMessage] = useState("");
   const [reportes, setReportes] = useState<ReportePendiente[]>([]);
   const [tecnicos, setTecnicos] = useState<Tecnico[]>([]);
-  const [selectedPriority, setSelectedPriority] = useState<Record<string, Prioridad>>({});
   const [selectedTech, setSelectedTech] = useState<Record<string, string>>({});
 
   const canAssign = useMemo(
-    () => (idReporte: string) => Boolean(selectedPriority[idReporte] && selectedTech[idReporte]),
-    [selectedPriority, selectedTech]
+    () => (idReporte: string) => Boolean(selectedTech[idReporte]),
+    [selectedTech]
   );
 
   const loadData = async () => {
@@ -83,9 +79,8 @@ export default function AdminInbox() {
   }, []);
 
   const assignReport = async (idReporte: string) => {
-    const prioridad = selectedPriority[idReporte];
     const id_tecnico_asignado = selectedTech[idReporte];
-    if (!prioridad || !id_tecnico_asignado) return;
+    if (!id_tecnico_asignado) return;
 
     setSubmittingId(idReporte);
     setErrorMessage("");
@@ -93,7 +88,7 @@ export default function AdminInbox() {
     try {
       await axios.put(
         `${API_BASE_URL}/admin/reportes/${idReporte}/asignacion`,
-        { prioridad, id_tecnico_asignado },
+        { id_tecnico_asignado },
         { headers: headers() }
       );
       setStatusMessage(`Reporte ${idReporte} asignado correctamente.`);
@@ -111,7 +106,8 @@ export default function AdminInbox() {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-[#001f3f]">Bandeja de Entrada</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Reportes pendientes para priorizar y asignar a un tecnico.
+          Reportes pendientes: la prioridad viene del catalogo de servicios. Asigna un tecnico para
+          continuar.
         </p>
       </div>
 
@@ -154,26 +150,11 @@ export default function AdminInbox() {
 
             <p className="mt-4 whitespace-pre-line text-sm text-slate-700">{item.descripcion_falla}</p>
             <p className="mt-2 text-xs text-slate-500">Fecha: {formatDate(item.fecha_reporte)}</p>
+            <p className="mt-2 text-xs font-semibold text-amber-800">
+              Prioridad (catalogo): {item.prioridad}
+            </p>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-              <label className="text-sm">
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Prioridad</span>
-                <select
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
-                  value={selectedPriority[item.id_reporte] || ""}
-                  onChange={(event) =>
-                    setSelectedPriority((prev) => ({ ...prev, [item.id_reporte]: event.target.value as Prioridad }))
-                  }
-                >
-                  <option value="">Selecciona prioridad</option>
-                  {PRIORIDADES.map((prioridad) => (
-                    <option key={prioridad} value={prioridad}>
-                      {prioridad}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
+            <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
               <label className="text-sm">
                 <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Tecnico</span>
                 <select

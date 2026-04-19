@@ -3,6 +3,63 @@ import axios from "axios";
 import { getToken } from "../auth/storage";
 
 const API_BASE_URL = "http://localhost:4000/api";
+const NOMBRE_ROL_TECNICO = "Tecnico";
+
+type DiaKey = "lun" | "mar" | "mie" | "jue" | "vie" | "sab" | "dom";
+
+type SlotDia = { activo: boolean; inicio: string; fin: string };
+
+const DIAS: { key: DiaKey; label: string }[] = [
+  { key: "lun", label: "Lun" },
+  { key: "mar", label: "Mar" },
+  { key: "mie", label: "Mie" },
+  { key: "jue", label: "Jue" },
+  { key: "vie", label: "Vie" },
+  { key: "sab", label: "Sab" },
+  { key: "dom", label: "Dom" },
+];
+
+function defaultHorario(): Record<DiaKey, SlotDia> {
+  const slot = (activo: boolean): SlotDia => ({ activo, inicio: "09:00", fin: "17:00" });
+  return {
+    lun: slot(true),
+    mar: slot(true),
+    mie: slot(true),
+    jue: slot(true),
+    vie: slot(true),
+    sab: slot(false),
+    dom: slot(false),
+  };
+}
+
+function mergeHorarioFromServer(raw: string | null | undefined): Record<DiaKey, SlotDia> {
+  const base = defaultHorario();
+  if (!raw) return base;
+  try {
+    const parsed = typeof raw === "string" ? (JSON.parse(raw) as Record<string, unknown>) : raw;
+    if (!parsed || typeof parsed !== "object") return base;
+    for (const { key } of DIAS) {
+      const v = parsed[key];
+      if (!v || typeof v !== "object" || Array.isArray(v)) continue;
+      const o = v as Record<string, unknown>;
+      base[key] = {
+        activo: Boolean(o.activo),
+        inicio: typeof o.inicio === "string" ? o.inicio : base[key].inicio,
+        fin: typeof o.fin === "string" ? o.fin : base[key].fin,
+      };
+    }
+    return base;
+  } catch {
+    return base;
+  }
+}
+
+function horarioTieneServicio(h: Record<DiaKey, SlotDia>): boolean {
+  return DIAS.some(({ key }) => {
+    const s = h[key];
+    return s.activo && s.inicio.trim() && s.fin.trim();
+  });
+}
 
 interface Usuario {
   id_usuario: string;
@@ -10,6 +67,9 @@ interface Usuario {
   correo: string;
   id_rol: string;
   nombre_rol: string;
+  id_tecnico?: string | null;
+  tecnico_id_area?: string | null;
+  tecnico_horario?: string | null;
 }
 
 interface Rol {
@@ -17,8 +77,12 @@ interface Rol {
   nombre_rol: string;
 }
 
+interface Area {
+  id_area: string;
+  nombre_area: string;
+}
+
 const initialForm = {
-  id_usuario: "",
   nombre_completo: "",
   correo: "",
   id_rol: "",
@@ -33,22 +97,30 @@ const headers = () => {
 export default function AdminUsuarios() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [roles, setRoles] = useState<Rol[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
   const [form, setForm] = useState(initialForm);
+  const [tecnicoAreaId, setTecnicoAreaId] = useState("");
+  const [horario, setHorario] = useState<Record<DiaKey, SlotDia>>(() => defaultHorario());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [showNuevaArea, setShowNuevaArea] = useState(false);
+  const [nuevaAreaNombre, setNuevaAreaNombre] = useState("");
+  const [savingArea, setSavingArea] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [usersRes, rolesRes] = await Promise.all([
+      const [usersRes, rolesRes, areasRes] = await Promise.all([
         axios.get<Usuario[]>(`${API_BASE_URL}/usuarios`, { headers: headers() }),
         axios.get<Rol[]>(`${API_BASE_URL}/roles`, { headers: headers() }),
+        axios.get<Area[]>(`${API_BASE_URL}/areas`, { headers: headers() }),
       ]);
       setUsuarios(usersRes.data || []);
       setRoles(rolesRes.data || []);
+      setAreas(areasRes.data || []);
       setErrorMessage("");
     } catch (error) {
       console.error(error);
@@ -64,7 +136,48 @@ export default function AdminUsuarios() {
 
   const resetForm = () => {
     setForm(initialForm);
+    setTecnicoAreaId("");
+    setHorario(defaultHorario());
     setEditingId(null);
+    setShowNuevaArea(false);
+    setNuevaAreaNombre("");
+  };
+
+  const handleCrearArea = async () => {
+    const nombre = nuevaAreaNombre.trim();
+    if (!nombre) return;
+    setSavingArea(true);
+    try {
+      const res = await axios.post<{ id_area: string; nombre_area: string }>(
+        `${API_BASE_URL}/admin/areas`,
+        { nombre_area: nombre },
+        { headers: headers() }
+      );
+      await loadData();
+      const newId = res.data?.id_area;
+      if (newId) setTecnicoAreaId(newId);
+      setShowNuevaArea(false);
+      setNuevaAreaNombre("");
+    } catch {
+      setErrorMessage("No se pudo crear el area. Intente de nuevo.");
+    } finally {
+      setSavingArea(false);
+    }
+  };
+
+  const rolSeleccionadoNombre = roles.find((r) => r.id_rol === form.id_rol)?.nombre_rol;
+  const esRolTecnico = rolSeleccionadoNombre === NOMBRE_ROL_TECNICO;
+
+  const setDiaHorario = (key: DiaKey, patch: Partial<SlotDia>) => {
+    setHorario((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  };
+
+  const buildHorarioPayload = (): Record<DiaKey, SlotDia> => {
+    const out = {} as Record<DiaKey, SlotDia>;
+    for (const { key } of DIAS) {
+      out[key] = { ...horario[key] };
+    }
+    return out;
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -72,6 +185,19 @@ export default function AdminUsuarios() {
     setSubmitting(true);
     setStatusMessage("");
     setErrorMessage("");
+
+    if (esRolTecnico) {
+      if (!tecnicoAreaId) {
+        setErrorMessage("Seleccione el area del tecnico.");
+        setSubmitting(false);
+        return;
+      }
+      if (!horarioTieneServicio(horario)) {
+        setErrorMessage("Indique al menos un dia activo con hora de inicio y fin.");
+        setSubmitting(false);
+        return;
+      }
+    }
 
     try {
       if (editingId) {
@@ -81,24 +207,38 @@ export default function AdminUsuarios() {
             nombre_completo: form.nombre_completo,
             correo: form.correo,
             id_rol: form.id_rol,
-            password: form.password,
+            password: form.password || undefined,
+            ...(esRolTecnico
+              ? { tecnico: { id_area: tecnicoAreaId, horario: buildHorarioPayload() } }
+              : {}),
           },
           { headers: headers() }
         );
         setStatusMessage("Usuario actualizado correctamente.");
       } else {
-        await axios.post(
+        const res = await axios.post<{
+          message: string;
+          id_usuario: string;
+          id_tecnico?: string | null;
+        }>(
           `${API_BASE_URL}/usuarios`,
           {
-            id_usuario: form.id_usuario,
             nombre_completo: form.nombre_completo,
             correo: form.correo,
             id_rol: form.id_rol,
             password: form.password,
+            ...(esRolTecnico
+              ? { tecnico: { id_area: tecnicoAreaId, horario: buildHorarioPayload() } }
+              : {}),
           },
           { headers: headers() }
         );
-        setStatusMessage("Usuario creado correctamente.");
+        const ids = res.data?.id_usuario
+          ? ` ID usuario: ${res.data.id_usuario}${
+              res.data.id_tecnico ? ` · ID tecnico: ${res.data.id_tecnico}` : ""
+            }.`
+          : "";
+        setStatusMessage(`Usuario creado correctamente.${ids}`);
       }
 
       resetForm();
@@ -146,16 +286,22 @@ export default function AdminUsuarios() {
         <h3 className="text-lg font-semibold text-slate-900">{editingId ? "Editar usuario" : "Nuevo usuario"}</h3>
 
         <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
-          <label className="text-sm">
-            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">ID usuario</span>
-            <input
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
-              value={form.id_usuario}
-              onChange={(event) => setForm((prev) => ({ ...prev, id_usuario: event.target.value }))}
-              disabled={Boolean(editingId)}
-              required
-            />
-          </label>
+          {editingId ? (
+            <label className="text-sm md:col-span-2">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                ID usuario (no editable)
+              </span>
+              <input
+                className="w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-3 text-sm text-slate-700"
+                value={editingId}
+                readOnly
+              />
+            </label>
+          ) : (
+            <p className="text-sm text-slate-600 md:col-span-2">
+              El identificador de usuario se genera automaticamente al crear la cuenta (formato USR_XXXX_00001).
+            </p>
+          )}
 
           <label className="text-sm">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Nombre completo</span>
@@ -178,7 +324,7 @@ export default function AdminUsuarios() {
             />
           </label>
 
-          <label className="text-sm">
+          <label className="text-sm md:col-span-2">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Rol</span>
             <select
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
@@ -194,6 +340,114 @@ export default function AdminUsuarios() {
               ))}
             </select>
           </label>
+
+          {esRolTecnico ? (
+            <div className="md:col-span-2 rounded-2xl border border-blue-200 bg-white p-4 shadow-sm">
+              <h4 className="text-sm font-semibold text-[#001f3f]">Perfil de tecnico</h4>
+              <p className="mt-1 text-xs text-slate-600">Area de cobertura y disponibilidad semanal.</p>
+
+              <label className="mt-3 block text-sm">
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Area</span>
+                <select
+                  className="w-full max-w-md rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
+                  value={showNuevaArea ? "__nueva__" : tecnicoAreaId}
+                  onChange={(e) => {
+                    if (e.target.value === "__nueva__") {
+                      setShowNuevaArea(true);
+                      setTecnicoAreaId("");
+                    } else {
+                      setShowNuevaArea(false);
+                      setTecnicoAreaId(e.target.value);
+                    }
+                  }}
+                  required={esRolTecnico && !showNuevaArea}
+                >
+                  <option value="">Seleccione area</option>
+                  {areas.map((a) => (
+                    <option key={a.id_area} value={a.id_area}>
+                      {a.nombre_area}
+                    </option>
+                  ))}
+                  <option value="__nueva__">＋ Nueva area...</option>
+                </select>
+              </label>
+
+              {showNuevaArea ? (
+                <div className="mt-2 flex max-w-md items-center gap-2">
+                  <input
+                    autoFocus
+                    className="flex-1 rounded-xl border border-blue-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    placeholder="Nombre del nueva area"
+                    value={nuevaAreaNombre}
+                    onChange={(e) => setNuevaAreaNombre(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleCrearArea(); } }}
+                    disabled={savingArea}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleCrearArea()}
+                    disabled={savingArea || !nuevaAreaNombre.trim()}
+                    className="rounded-xl bg-[#001f3f] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
+                  >
+                    {savingArea ? "Guardando..." : "Guardar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowNuevaArea(false); setNuevaAreaNombre(""); }}
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : null}
+
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-[640px] w-full border-collapse text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                      <th className="py-2 pr-2">Dia</th>
+                      <th className="py-2 pr-2">Activo</th>
+                      <th className="py-2 pr-2">Inicio</th>
+                      <th className="py-2 pr-2">Fin</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {DIAS.map(({ key, label }) => (
+                      <tr key={key} className="border-b border-slate-100">
+                        <td className="py-2 pr-2 font-medium text-slate-700">{label}</td>
+                        <td className="py-2 pr-2">
+                          <input
+                            type="checkbox"
+                            checked={horario[key].activo}
+                            onChange={(e) => setDiaHorario(key, { activo: e.target.checked })}
+                            className="h-4 w-4 rounded border-slate-300"
+                          />
+                        </td>
+                        <td className="py-2 pr-2">
+                          <input
+                            type="time"
+                            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                            value={horario[key].inicio}
+                            onChange={(e) => setDiaHorario(key, { inicio: e.target.value })}
+                            disabled={!horario[key].activo}
+                          />
+                        </td>
+                        <td className="py-2 pr-2">
+                          <input
+                            type="time"
+                            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                            value={horario[key].fin}
+                            onChange={(e) => setDiaHorario(key, { fin: e.target.value })}
+                            disabled={!horario[key].activo}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
 
           <label className="text-sm md:col-span-2">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -272,12 +526,13 @@ export default function AdminUsuarios() {
                           onClick={() => {
                             setEditingId(usuario.id_usuario);
                             setForm({
-                              id_usuario: usuario.id_usuario,
                               nombre_completo: usuario.nombre_completo,
                               correo: usuario.correo,
                               id_rol: usuario.id_rol,
                               password: "",
                             });
+                            setTecnicoAreaId(usuario.tecnico_id_area || "");
+                            setHorario(mergeHorarioFromServer(usuario.tecnico_horario));
                             setStatusMessage("");
                             setErrorMessage("");
                           }}

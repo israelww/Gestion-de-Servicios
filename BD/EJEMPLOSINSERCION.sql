@@ -27,10 +27,20 @@ INSERT INTO Tipo_CI (id_tipo_ci, nombre_tipo) VALUES
 ('T02', 'Switch'),
 ('T03', 'Proyector');
 
+-- Areas y servicios (catalogo)
+INSERT INTO Areas (id_area, nombre_area) VALUES 
+('AR00000001', 'General');
+
+INSERT INTO Servicios (id_servicio, nombre, id_area, descripcion, tiempo_servicio, prioridad) VALUES 
+('SV00000001', N'Servicio general', 'AR00000001', NULL, NULL, 'Media');
+
 -- Usuarios (Responsables y Técnicos)
 INSERT INTO Usuarios (id_usuario, nombre_completo, correo, password_hash, id_rol) VALUES 
 ('USR01', 'Santiago Admin 2', 'santiago@empresa.com', 'hash_secure_123', 'ROL01'),
 ('USR02', 'Juan Tecnico', 'juan.mant@empresa.com', 'hash_secure_456', 'ROL02');
+
+INSERT INTO Tecnico (id_tecnico, id_usuario, id_area, horario) VALUES
+('TC00000001', 'USR02', 'AR00000001', NULL);
 
 -- Inserción de una Laptop
 INSERT INTO Elementos_Configuracion (id_ci, numero_serie, nombre_equipo, modelo, estado, id_tipo_ci, id_marca, id_sublocalizacion, id_usuario_responsable) 
@@ -44,11 +54,11 @@ VALUES
 
 -- Reporte de Mantenimiento Preventivo
 INSERT INTO Mantenimientos (
-    id_mantenimiento, id_ci, tipo_mantenimiento, descripcion_tarea, 
-    estado, prioridad, id_tecnico_asignado, costo, id_usuario_reporta
+    id_mantenimiento, id_ci, id_servicio, tipo_mantenimiento, descripcion_tarea, 
+    estado, id_tecnico_asignado, costo, id_usuario_reporta
 ) VALUES (
-    'MANT001', 'LAP-EDA-01', 'Preventivo', 'Limpieza interna y cambio de pasta térmica', 
-    'En Proceso', 'Media', 'USR02', 25.50, 'USR01'
+    'MANT001', 'LAP-EDA-01', 'SV00000001', 'Preventivo', 'Limpieza interna y cambio de pasta térmica', 
+    'En Proceso', 'USR02', 25.50, 'USR01'
 );
 
 INSERT INTO Elementos_Configuracion (

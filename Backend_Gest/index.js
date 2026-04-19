@@ -168,6 +168,80 @@ function isForeignKeyError(err) {
   return Number(err?.number) === 547
 }
 
+function fourCharRoleCode(nombreRol) {
+  const n = toTrimmedString(nombreRol)
+  if (n === ROLE_ADMIN) return 'ADMN'
+  if (n === ROLE_TECNICO) return 'TECN'
+  const ascii = n
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]/g, '')
+    .toUpperCase()
+  const four = ascii.slice(0, 4)
+  if (four.length >= 4) return four
+  return `${four}XXXX`.slice(0, 4)
+}
+
+async function getRolNombre(pool, idRol) {
+  const r = await pool
+    .request()
+    .input('id_rol', sql.Char(10), idRol)
+    .query(`SELECT nombre_rol FROM Roles WHERE id_rol = @id_rol`)
+  return toTrimmedString(r.recordset?.[0]?.nombre_rol)
+}
+
+async function findNextUsuarioIdForRole(request, roleCode) {
+  const prefix = `USR_${roleCode}_`
+  const pattern = `${prefix}%`
+  const result = await request.input('usrPat', sql.VarChar(32), pattern).query(`
+    SELECT id_usuario FROM Usuarios WHERE id_usuario LIKE @usrPat
+  `)
+  let max = 0
+  for (const row of result.recordset || []) {
+    const id = String(row.id_usuario || '')
+    if (!id.startsWith(prefix)) continue
+    const suffix = id.slice(prefix.length)
+    const n = Number.parseInt(suffix, 10)
+    if (!Number.isNaN(n)) max = Math.max(max, n)
+  }
+  return `${prefix}${String(max + 1).padStart(5, '0')}`
+}
+
+async function findNextTecnicoId(request) {
+  const result = await request.query(`
+    SELECT id_tecnico FROM Tecnico WHERE id_tecnico LIKE 'TC%'
+  `)
+  const max = (result.recordset || []).reduce((m, row) => {
+    const raw = String(row.id_tecnico || '').replace(/^TC/i, '')
+    const n = Number.parseInt(raw, 10)
+    return Number.isNaN(n) ? m : Math.max(m, n)
+  }, 0)
+  return `TC${String(max + 1).padStart(8, '0')}`
+}
+
+function horarioTecnicoValido(horario) {
+  if (!horario || typeof horario !== 'object' || Array.isArray(horario)) return false
+  const dias = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom']
+  for (const d of dias) {
+    const v = horario[d]
+    if (!v) continue
+    if (Array.isArray(v)) {
+      for (const slot of v) {
+        if (slot && toTrimmedString(slot.inicio) && toTrimmedString(slot.fin)) return true
+      }
+    } else if (v.activo && toTrimmedString(v.inicio) && toTrimmedString(v.fin)) return true
+  }
+  return false
+}
+
+function stringifyHorario(horario) {
+  try {
+    return JSON.stringify(horario)
+  } catch {
+    return null
+  }
+}
+
 async function findNextMaintenanceId(request) {
   const result = await request.query(`
     SELECT id_mantenimiento
@@ -183,21 +257,235 @@ async function findNextMaintenanceId(request) {
   return `MT${String(maxSequence + 1).padStart(8, '0')}`
 }
 
+async function findNextAreaId(request) {
+  const result = await request.query(`
+    SELECT id_area
+    FROM Areas
+    WHERE id_area LIKE 'AR%'
+  `)
+
+  const maxSequence = (result.recordset || []).reduce((max, row) => {
+    const suffix = Number.parseInt(String(row.id_area || '').replace(/^AR/, ''), 10)
+    return Number.isNaN(suffix) ? max : Math.max(max, suffix)
+  }, 0)
+
+  return `AR${String(maxSequence + 1).padStart(8, '0')}`
+}
+
+async function findNextServicioId(request) {
+  const result = await request.query(`
+    SELECT id_servicio
+    FROM Servicios
+    WHERE id_servicio LIKE 'SV%'
+  `)
+
+  const maxSequence = (result.recordset || []).reduce((max, row) => {
+    const suffix = Number.parseInt(String(row.id_servicio || '').replace(/^SV/, ''), 10)
+    return Number.isNaN(suffix) ? max : Math.max(max, suffix)
+  }, 0)
+
+  return `SV${String(maxSequence + 1).padStart(8, '0')}`
+}
+
+let serviciosSchemaReady = false
+async function ensureServiciosCatalogSchema(pool) {
+  if (serviciosSchemaReady) return
+
+  await pool.request().query(`
+    IF OBJECT_ID('Areas', 'U') IS NULL
+    BEGIN
+      CREATE TABLE Areas (
+        id_area CHAR(10) PRIMARY KEY,
+        nombre_area VARCHAR(100) NOT NULL
+      );
+    END
+  `)
+
+  await pool.request().query(`
+    IF OBJECT_ID('Servicios', 'U') IS NULL
+    BEGIN
+      CREATE TABLE Servicios (
+        id_servicio CHAR(10) PRIMARY KEY,
+        nombre VARCHAR(150) NOT NULL,
+        id_area CHAR(10) NOT NULL,
+        descripcion VARCHAR(MAX) NULL,
+        tiempo_servicio INT NULL,
+        prioridad VARCHAR(20) NOT NULL,
+        CONSTRAINT FK_Servicios_Area FOREIGN KEY (id_area) REFERENCES Areas(id_area)
+      );
+    END
+  `)
+
+  await pool.request().query(`
+    IF COL_LENGTH('Servicios', 'id_sublocalizacion') IS NOT NULL
+    BEGIN
+      DECLARE @fkName sysname;
+      DECLARE fk_cursor CURSOR LOCAL FAST_FORWARD FOR
+        SELECT fk.name
+        FROM sys.foreign_keys fk
+        JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+        WHERE fk.parent_object_id = OBJECT_ID('Servicios')
+          AND fkc.parent_column_id = COLUMNPROPERTY(OBJECT_ID('Servicios'), 'id_sublocalizacion', 'ColumnId');
+
+      OPEN fk_cursor;
+      FETCH NEXT FROM fk_cursor INTO @fkName;
+      WHILE @@FETCH_STATUS = 0
+      BEGIN
+        EXEC(N'ALTER TABLE Servicios DROP CONSTRAINT [' + @fkName + N']');
+        FETCH NEXT FROM fk_cursor INTO @fkName;
+      END
+      CLOSE fk_cursor;
+      DEALLOCATE fk_cursor;
+
+      ALTER TABLE Servicios DROP COLUMN id_sublocalizacion;
+    END
+  `)
+
+  await pool.request().query(`
+    IF COL_LENGTH('Mantenimientos', 'id_servicio') IS NULL
+    BEGIN
+      ALTER TABLE Mantenimientos ADD id_servicio CHAR(10) NULL;
+    END
+  `)
+
+  await pool.request().query(`
+    IF NOT EXISTS (SELECT 1 FROM Areas WHERE id_area = 'AR00000001')
+      INSERT INTO Areas (id_area, nombre_area) VALUES ('AR00000001', N'General');
+  `)
+
+  const svcCount = await pool.request().query(`SELECT COUNT(*) AS c FROM Servicios`)
+  if (!(Number(svcCount.recordset?.[0]?.c) > 0)) {
+    const id_servicio = await findNextServicioId(pool.request())
+    await pool
+      .request()
+      .input('id_servicio', sql.Char(10), id_servicio)
+      .query(`
+        INSERT INTO Servicios (id_servicio, nombre, id_area, descripcion, tiempo_servicio, prioridad)
+        VALUES (@id_servicio, N'Servicio general', 'AR00000001', NULL, NULL, 'Media')
+      `)
+  }
+
+  await pool.request().query(`
+    UPDATE m
+    SET m.id_servicio = (
+      SELECT TOP 1 s.id_servicio
+      FROM Servicios s
+      ORDER BY s.id_servicio
+    )
+    FROM Mantenimientos m
+    WHERE m.id_servicio IS NULL
+  `)
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1
+      FROM sys.foreign_keys fk
+      WHERE fk.parent_object_id = OBJECT_ID('Mantenimientos')
+        AND fk.referenced_object_id = OBJECT_ID('Servicios')
+    )
+    AND COL_LENGTH('Mantenimientos', 'id_servicio') IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM Mantenimientos WHERE id_servicio IS NULL)
+    BEGIN
+      ALTER TABLE Mantenimientos WITH CHECK ADD CONSTRAINT FK_Mantenimientos_Servicio
+        FOREIGN KEY (id_servicio) REFERENCES Servicios(id_servicio);
+    END
+  `)
+
+  await pool.request().query(`
+    IF EXISTS (
+      SELECT 1
+      FROM sys.columns c
+      WHERE c.object_id = OBJECT_ID('Mantenimientos')
+        AND c.name = 'id_servicio'
+        AND c.is_nullable = 1
+    )
+    AND NOT EXISTS (SELECT 1 FROM Mantenimientos WHERE id_servicio IS NULL)
+    BEGIN
+      ALTER TABLE Mantenimientos ALTER COLUMN id_servicio CHAR(10) NOT NULL;
+    END
+  `)
+
+  await pool.request().query(`
+    IF COL_LENGTH('Mantenimientos', 'prioridad') IS NOT NULL
+    BEGIN
+      ALTER TABLE Mantenimientos DROP COLUMN prioridad;
+    END
+  `)
+
+  serviciosSchemaReady = true
+}
+
+let tecnicoTableReady = false
+async function ensureTecnicoTable(pool) {
+  if (tecnicoTableReady) return
+
+  await pool.request().query(`
+    IF OBJECT_ID('Tecnico', 'U') IS NULL
+    BEGIN
+      CREATE TABLE Tecnico (
+        id_tecnico CHAR(10) NOT NULL,
+        id_usuario CHAR(15) NOT NULL,
+        id_area CHAR(10) NOT NULL,
+        horario VARCHAR(500) NULL,
+        CONSTRAINT PK_Tecnico PRIMARY KEY (id_tecnico),
+        CONSTRAINT UQ_Tecnico_Usuario UNIQUE (id_usuario),
+        CONSTRAINT FK_Tecnico_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario),
+        CONSTRAINT FK_Tecnico_Area FOREIGN KEY (id_area) REFERENCES Areas(id_area)
+      );
+    END
+    ELSE IF COL_LENGTH('Tecnico', 'id_tecnico') IS NULL
+    BEGIN
+      IF COL_LENGTH('Tecnico', 'horario') IS NOT NULL AND COL_LENGTH('Tecnico', 'horario') < 500
+        ALTER TABLE Tecnico ALTER COLUMN horario VARCHAR(500) NULL;
+
+      ALTER TABLE Tecnico ADD id_tecnico CHAR(10) NULL;
+
+      ;WITH c AS (SELECT id_usuario, ROW_NUMBER() OVER (ORDER BY id_usuario) AS rn FROM Tecnico)
+      UPDATE t
+      SET t.id_tecnico = 'TC' + RIGHT('00000000' + CAST(c.rn AS VARCHAR(8)), 8)
+      FROM Tecnico t
+      INNER JOIN c ON c.id_usuario = t.id_usuario;
+
+      ALTER TABLE Tecnico ALTER COLUMN id_tecnico CHAR(10) NOT NULL;
+
+      DECLARE @pkName SYSNAME;
+      SELECT @pkName = kc.name
+      FROM sys.key_constraints kc
+      WHERE kc.parent_object_id = OBJECT_ID('Tecnico') AND kc.type = 'PK';
+
+      IF @pkName IS NOT NULL
+      BEGIN
+        DECLARE @dropPkSql NVARCHAR(500) = N'ALTER TABLE Tecnico DROP CONSTRAINT ' + QUOTENAME(@pkName);
+        EXEC(@dropPkSql);
+      END
+
+      ALTER TABLE Tecnico ADD CONSTRAINT PK_Tecnico PRIMARY KEY (id_tecnico);
+
+      IF NOT EXISTS (
+        SELECT 1 FROM sys.indexes i
+        WHERE i.object_id = OBJECT_ID('Tecnico') AND i.name = 'UQ_Tecnico_Usuario' AND i.is_unique_constraint = 1
+      )
+        ALTER TABLE Tecnico ADD CONSTRAINT UQ_Tecnico_Usuario UNIQUE (id_usuario);
+    END
+    ELSE IF COL_LENGTH('Tecnico', 'horario') IS NOT NULL AND COL_LENGTH('Tecnico', 'horario') < 500
+      ALTER TABLE Tecnico ALTER COLUMN horario VARCHAR(500) NULL;
+  `)
+
+  tecnicoTableReady = true
+}
+
 let workflowSchemaReady = false
 async function ensureWorkflowColumns(pool) {
   if (workflowSchemaReady) return
+
+  await ensureServiciosCatalogSchema(pool)
+  await ensureTecnicoTable(pool)
 
   await pool.request().query(`
     IF COL_LENGTH('Mantenimientos', 'estado') IS NULL
     BEGIN
       ALTER TABLE Mantenimientos
       ADD estado VARCHAR(20) NOT NULL CONSTRAINT DF_Mantenimientos_estado DEFAULT 'Pendiente'
-    END;
-
-    IF COL_LENGTH('Mantenimientos', 'prioridad') IS NULL
-    BEGIN
-      ALTER TABLE Mantenimientos
-      ADD prioridad VARCHAR(20) NULL
     END;
 
     IF COL_LENGTH('Mantenimientos', 'id_tecnico_asignado') IS NULL
@@ -235,6 +523,56 @@ async function ensureWorkflowColumns(pool) {
       ALTER TABLE Mantenimientos
       ADD fecha_valoracion DATETIME NULL
     END;
+
+    IF COL_LENGTH('Mantenimientos', 'id_area') IS NULL
+    BEGIN
+      ALTER TABLE Mantenimientos
+      ADD id_area CHAR(10) NULL
+        CONSTRAINT FK_Mantenimientos_Area FOREIGN KEY REFERENCES Areas(id_area)
+    END;
+  `)
+
+  // Separar en una segunda llamada para que el batch anterior ya esté comprometido
+  // antes de intentar ALTER COLUMN (SQL Server requiere que no haya FKs activas)
+  await pool.request().query(`
+    -- Quitar NOT NULL de id_servicio si aún lo tiene
+    IF EXISTS (
+      SELECT 1
+      FROM sys.columns c
+      WHERE c.object_id = OBJECT_ID('Mantenimientos')
+        AND c.name      = 'id_servicio'
+        AND c.is_nullable = 0
+    )
+    BEGIN
+      -- 1. Eliminar la FK que apunta a Servicios desde id_servicio (si existe)
+      DECLARE @fkSrv SYSNAME;
+      SELECT @fkSrv = fk.name
+      FROM sys.foreign_keys fk
+      JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+      WHERE fk.parent_object_id    = OBJECT_ID('Mantenimientos')
+        AND fkc.parent_column_id   = COLUMNPROPERTY(OBJECT_ID('Mantenimientos'), 'id_servicio', 'ColumnId')
+        AND fk.referenced_object_id = OBJECT_ID('Servicios');
+
+      IF @fkSrv IS NOT NULL
+      BEGIN
+        DECLARE @dropSrv NVARCHAR(500) =
+          N'ALTER TABLE Mantenimientos DROP CONSTRAINT ' + QUOTENAME(@fkSrv);
+        EXEC(@dropSrv);
+      END
+
+      -- 2. Cambiar la columna a nullable
+      ALTER TABLE Mantenimientos ALTER COLUMN id_servicio CHAR(10) NULL;
+
+      -- 3. Volver a agregar la FK como nullable
+      IF NOT EXISTS (
+        SELECT 1 FROM sys.foreign_keys
+        WHERE parent_object_id    = OBJECT_ID('Mantenimientos')
+          AND referenced_object_id = OBJECT_ID('Servicios')
+      )
+        ALTER TABLE Mantenimientos
+        ADD CONSTRAINT FK_Mantenimientos_Servicio
+        FOREIGN KEY (id_servicio) REFERENCES Servicios(id_servicio);
+    END
   `)
 
   workflowSchemaReady = true
@@ -282,6 +620,151 @@ async function ensureCiHistoryTable(pool) {
 
   ciHistorySchemaReady = true
 }
+
+// ─── Auto-Assignment Engine ──────────────────────────────────────────────────
+// Límite máximo de tickets activos por técnico antes de excluirlo
+const MAX_TICKETS_POR_TECNICO = 5
+
+// Mapea el número de día JS (0=Dom … 6=Sáb) a la clave del JSON de horario
+const DIA_KEY = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
+
+/**
+ * Determina si un técnico está disponible ahora según su horario JSON.
+ * @param {string|null} horarioJson  - Valor del campo Tecnico.horario
+ * @param {Date}        now          - Fecha/hora actual
+ * @returns {boolean}
+ */
+function tecnicoEstaEnHorario(horarioJson, now) {
+  if (!horarioJson) return false
+  let horario
+  try {
+    horario = typeof horarioJson === 'string' ? JSON.parse(horarioJson) : horarioJson
+  } catch {
+    return false
+  }
+
+  const diaKey = DIA_KEY[now.getDay()]   // 'lun', 'mar', ...
+  const slot = horario[diaKey]
+  if (!slot || !slot.activo) return false
+
+  // Comparar hora actual con inicio y fin del slot (formato 'HH:MM')
+  const toMinutes = (hhmm) => {
+    const [h, m] = String(hhmm || '').split(':').map(Number)
+    return (h || 0) * 60 + (m || 0)
+  }
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  return nowMin >= toMinutes(slot.inicio) && nowMin < toMinutes(slot.fin)
+}
+
+/**
+ * Motor de asignación automática.
+ *
+ * Debe llamarse DENTRO de una transacción activa (SERIALIZABLE).
+ * Usa UPDLOCK + HOLDLOCK para evitar que dos tickets concurrentes
+ * asignen al mismo técnico simultáneamente.
+ *
+ * @param {sql.Transaction} transaction
+ * @param {string}          id_mantenimiento  - Ticket recién creado
+ * @param {string}          id_area           - Área del problema (filtro obligatorio)
+ * @param {string}          id_edificio       - Edificio del CI (para bono de proximidad)
+ * @param {Date}            now               - Momento de la asignación
+ * @returns {Promise<{asignado: boolean, id_tecnico?: string, razon?: string}>}
+ */
+async function autoAssignTecnico(transaction, id_mantenimiento, id_area, id_edificio, now) {
+  // 1. Consultar candidatos bloqueando filas para evitar doble asignación.
+  //    UPDLOCK sobre Tecnico y HOLDLOCK sobre la lectura de Mantenimientos
+  //    garantizan serialización frente a peticiones concurrentes.
+  const candidatesResult = await new sql.Request(transaction)
+    .input('id_area',     sql.Char(10),  id_area)
+    .input('id_edificio', sql.Char(10),  id_edificio)
+    .input('max_tickets', sql.Int,       MAX_TICKETS_POR_TECNICO)
+    .query(`
+      SELECT
+        tc.id_usuario       AS id_tecnico,
+        tc.horario,
+        -- Carga actual: tickets en estados activos asignados a este técnico
+        COUNT(m.id_mantenimiento)                                    AS carga_activa,
+        -- Bono de proximidad: ¿ya tiene un ticket en el mismo edificio?
+        MAX(CASE WHEN e.id_edificio = @id_edificio THEN 1 ELSE 0 END) AS mismo_edificio
+      FROM Tecnico tc WITH (UPDLOCK, HOLDLOCK)
+      LEFT JOIN Mantenimientos m WITH (UPDLOCK)
+        ON  m.id_tecnico_asignado = tc.id_usuario
+        AND m.estado IN ('Pendiente', 'Asignado', 'En Proceso')
+      LEFT JOIN Elementos_Configuracion ci_m
+        ON  ci_m.id_ci = m.id_ci
+      LEFT JOIN Sublocalizaciones s_m
+        ON  s_m.id_sublocalizacion = ci_m.id_sublocalizacion
+      LEFT JOIN Edificios e
+        ON  e.id_edificio = s_m.id_edificio
+      WHERE tc.id_area = @id_area
+      GROUP BY tc.id_usuario, tc.horario
+      HAVING COUNT(m.id_mantenimiento) < @max_tickets
+      ORDER BY tc.id_usuario
+    `)
+
+  const candidatos = candidatesResult.recordset || []
+
+  // 2. Filtrar por horario laboral vigente en JS
+  const disponibles = candidatos.filter((c) =>
+    tecnicoEstaEnHorario(c.horario, now)
+  )
+
+  if (candidatos.length === 0) {
+    console.log(`[AutoAsign] Ticket ${id_mantenimiento} | area=${id_area} edificio=${id_edificio} | Sin tecnicos con esa area o todos en carga maxima (>${MAX_TICKETS_POR_TECNICO})`)
+    return { asignado: false, razon: 'sin_tecnicos_area_o_carga_maxima' }
+  }
+  if (disponibles.length === 0) {
+    console.log(`[AutoAsign] Ticket ${id_mantenimiento} | ${candidatos.length} tecnico(s) con area correcta pero NINGUNO en horario ahora (${new Date().toLocaleTimeString()})`)
+    candidatos.forEach(c => console.log(`  - ${c.id_tecnico} | carga=${c.carga_activa}`))
+    return { asignado: false, razon: 'fuera_de_horario' }
+  }
+
+  // 3. Calcular Score de disponibilidad para cada candidato disponible:
+  //    Score = (carga_activa * -10) + (mismo_edificio * 5)
+  //    → Mayor score = mayor prioridad
+  const scored = disponibles.map((c) => ({
+    id_tecnico:    c.id_tecnico,
+    score:         (Number(c.carga_activa) * -10) + (Number(c.mismo_edificio) * 5),
+    carga_activa:  Number(c.carga_activa),
+    mismo_edificio: Number(c.mismo_edificio),
+  }))
+
+  // Ordenar: mayor score primero; empate → menor id_tecnico (estabilidad)
+  scored.sort((a, b) => b.score - a.score || a.id_tecnico.localeCompare(b.id_tecnico))
+  const mejor = scored[0]
+
+  // ── Log de decisión de asignación ──────────────────────────────────────────
+  console.log(`\n╔═══ AutoAsign | Ticket: ${id_mantenimiento} ═══════════════════════════`)
+  console.log(`║  Area del problema : ${id_area}`)
+  console.log(`║  Edificio del CI   : ${id_edificio}`)
+  console.log(`║  Hora de asignacion: ${new Date().toLocaleTimeString()}`)
+  console.log(`║  Candidatos evaluados (${scored.length}):`) 
+  scored.forEach((c, i) => {
+    const marca = i === 0 ? '★ ELEGIDO' : '         '
+    console.log(`║    ${marca} ${c.id_tecnico} | carga=${c.carga_activa} | mismo_edificio=${c.mismo_edificio} | score=${c.score}`)
+  })
+  console.log(`╚══ Asignado a: ${mejor.id_tecnico} (score ${mejor.score}) ${'═'.repeat(20)}\n`)
+  // ────────────────────────────────────────────────────────────────────────────
+
+  // 4. Asignar el ticket al mejor candidato
+  await new sql.Request(transaction)
+    .input('id_mantenimiento',   sql.Char(10),  id_mantenimiento)
+    .input('id_tecnico_asignado', sql.Char(15), mejor.id_tecnico)
+    .query(`
+      UPDATE Mantenimientos
+      SET id_tecnico_asignado = @id_tecnico_asignado,
+          estado              = 'Asignado'
+      WHERE id_mantenimiento = @id_mantenimiento
+    `)
+
+  return {
+    asignado: true,
+    id_tecnico: mejor.id_tecnico,
+    score: mejor.score,
+    candidatos_evaluados: scored,
+  }
+}
+// ─── Fin Motor de Asignación ─────────────────────────────────────────────────
 
 app.get('/api/edificios', async (_req, res) => {
   try {
@@ -614,6 +1097,168 @@ app.get('/api/sublocalizaciones/:id_sublocalizacion/ci', ...requireAnyAuth, asyn
     return res.status(200).json(result.recordset)
   } catch (err) {
     console.error('Error en GET /api/sublocalizaciones/:id_sublocalizacion/ci:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.get('/api/areas', ...requireAnyAuth, async (_req, res) => {
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    await ensureWorkflowColumns(pool)
+
+    const result = await pool.request().query(`
+      SELECT id_area, nombre_area
+      FROM Areas
+      ORDER BY nombre_area
+    `)
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/areas:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.post('/api/admin/areas', ...requireAdmin, async (req, res) => {
+  const nombre_area = toTrimmedString(req.body?.nombre_area)
+  if (!nombre_area) return badRequest(res, 'nombre_area es obligatorio')
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    await ensureWorkflowColumns(pool)
+
+    const id_area = await findNextAreaId(pool.request())
+    await pool
+      .request()
+      .input('id_area', sql.Char(10), id_area)
+      .input('nombre_area', sql.VarChar(100), nombre_area)
+      .query(`INSERT INTO Areas (id_area, nombre_area) VALUES (@id_area, @nombre_area)`)
+
+    return res.status(201).json({ message: 'Area creada correctamente', id_area })
+  } catch (err) {
+    console.error('Error en POST /api/admin/areas:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.get('/api/servicios', ...requireAnyAuth, async (_req, res) => {
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    await ensureWorkflowColumns(pool)
+
+    const result = await pool.request().query(`
+      SELECT
+        srv.id_servicio,
+        srv.nombre,
+        srv.id_area,
+        srv.descripcion,
+        srv.tiempo_servicio,
+        srv.prioridad,
+        a.nombre_area
+      FROM Servicios srv
+      JOIN Areas a ON a.id_area = srv.id_area
+      ORDER BY a.nombre_area, srv.nombre
+    `)
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/servicios:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.get('/api/admin/servicios', ...requireAdmin, async (_req, res) => {
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    await ensureWorkflowColumns(pool)
+
+    const result = await pool.request().query(`
+      SELECT
+        srv.id_servicio,
+        srv.nombre,
+        srv.id_area,
+        srv.descripcion,
+        srv.tiempo_servicio,
+        srv.prioridad,
+        a.nombre_area
+      FROM Servicios srv
+      JOIN Areas a ON a.id_area = srv.id_area
+      ORDER BY a.nombre_area, srv.nombre
+    `)
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/admin/servicios:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+app.post('/api/admin/servicios', ...requireAdmin, async (req, res) => {
+  const nombre = toTrimmedString(req.body?.nombre)
+  const id_area = toTrimmedString(req.body?.id_area)
+  const descripcion = toTrimmedString(req.body?.descripcion)
+  const tiempoRaw = req.body?.tiempo_servicio
+  const tiempo_servicio =
+    tiempoRaw === '' || tiempoRaw === null || tiempoRaw === undefined
+      ? null
+      : Number.parseInt(String(tiempoRaw), 10)
+  const prioridad = toTrimmedString(req.body?.prioridad)
+
+  if (!nombre || !id_area || !prioridad) {
+    return badRequest(res, 'nombre, id_area y prioridad son obligatorios')
+  }
+  if (!PRIORIDADES_VALIDAS.includes(prioridad)) {
+    return badRequest(res, 'La prioridad no es valida')
+  }
+  if (tiempo_servicio !== null && (!Number.isInteger(tiempo_servicio) || tiempo_servicio < 0)) {
+    return badRequest(res, 'tiempo_servicio debe ser un entero de minutos >= 0 o vacio')
+  }
+
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    await ensureWorkflowColumns(pool)
+
+    const areaOk = await existsById(pool.request(), 'Areas', 'id_area', 'id_area', id_area)
+    if (!areaOk) return res.status(404).json({ message: 'El area no existe' })
+
+    const id_servicio = await findNextServicioId(pool.request())
+    await pool
+      .request()
+      .input('id_servicio', sql.Char(10), id_servicio)
+      .input('nombre', sql.VarChar(150), nombre)
+      .input('id_area', sql.Char(10), id_area)
+      .input('descripcion', sql.VarChar(sql.MAX), descripcion || null)
+      .input('tiempo_servicio', sql.Int, tiempo_servicio)
+      .input('prioridad', sql.VarChar(20), prioridad)
+      .query(`
+        INSERT INTO Servicios (
+          id_servicio,
+          nombre,
+          id_area,
+          descripcion,
+          tiempo_servicio,
+          prioridad
+        )
+        VALUES (
+          @id_servicio,
+          @nombre,
+          @id_area,
+          @descripcion,
+          @tiempo_servicio,
+          @prioridad
+        )
+      `)
+
+    return res.status(201).json({ message: 'Servicio creado correctamente', id_servicio })
+  } catch (err) {
+    console.error('Error en POST /api/admin/servicios:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
   }
 })
@@ -1202,11 +1847,23 @@ app.post('/api/admin/ci/:id_ci/ticket-preventivo', ...requireAdmin, async (req, 
       return res.status(404).json({ message: 'El CI no existe' })
     }
 
+    const srvPick = await new sql.Request(transaction).query(
+      `SELECT TOP 1 id_servicio FROM Servicios ORDER BY id_servicio`
+    )
+    const id_servicio = srvPick.recordset?.[0]?.id_servicio
+    if (!id_servicio) {
+      await transaction.rollback()
+      return res.status(409).json({
+        message: 'No hay servicios en el catalogo; crea al menos uno desde el administrador',
+      })
+    }
+
     const id_mantenimiento = await findNextMaintenanceId(new sql.Request(transaction))
 
     await new sql.Request(transaction)
       .input('id_mantenimiento', sql.Char(10), id_mantenimiento)
       .input('id_ci', sql.VarChar(25), id_ci)
+      .input('id_servicio', sql.Char(10), id_servicio)
       .input('fecha_mantenimiento', sql.DateTime, new Date())
       .input('tipo_mantenimiento', sql.VarChar(50), 'Preventivo')
       .input('descripcion_tarea', sql.VarChar(sql.MAX), descripcion_tarea)
@@ -1216,6 +1873,7 @@ app.post('/api/admin/ci/:id_ci/ticket-preventivo', ...requireAdmin, async (req, 
         INSERT INTO Mantenimientos (
           id_mantenimiento,
           id_ci,
+          id_servicio,
           fecha_mantenimiento,
           tipo_mantenimiento,
           descripcion_tarea,
@@ -1225,6 +1883,7 @@ app.post('/api/admin/ci/:id_ci/ticket-preventivo', ...requireAdmin, async (req, 
         VALUES (
           @id_mantenimiento,
           @id_ci,
+          @id_servicio,
           @fecha_mantenimiento,
           @tipo_mantenimiento,
           @descripcion_tarea,
@@ -1285,13 +1944,20 @@ app.post('/api/reportes', ...requireAnyAuth, async (req, res) => {
     id_edificio: toTrimmedString(req.body?.id_edificio),
     id_sublocalizacion: toTrimmedString(req.body?.id_sublocalizacion),
     id_ci: toTrimmedString(req.body?.id_ci),
+    id_area: toTrimmedString(req.body?.id_area),
     descripcion_falla: toTrimmedString(req.body?.descripcion_falla),
   }
 
-  if (!payload.id_edificio || !payload.id_sublocalizacion || !payload.id_ci || !payload.descripcion_falla) {
+  if (
+    !payload.id_edificio ||
+    !payload.id_sublocalizacion ||
+    !payload.id_ci ||
+    !payload.id_area ||
+    !payload.descripcion_falla
+  ) {
     return badRequest(
       res,
-      'id_edificio, id_sublocalizacion, id_ci y descripcion_falla son obligatorios'
+      'id_edificio, id_sublocalizacion, id_ci, id_area y descripcion_falla son obligatorios'
     )
   }
 
@@ -1329,11 +1995,22 @@ app.post('/api/reportes', ...requireAnyAuth, async (req, res) => {
       })
     }
 
+    // Validate that the provided id_area exists
+    const areaCheck = await new sql.Request(transaction)
+      .input('id_area', sql.Char(10), payload.id_area)
+      .query(`SELECT id_area FROM Areas WHERE id_area = @id_area`)
+    if (!areaCheck.recordset?.[0]) {
+      await transaction.rollback()
+      return res.status(409).json({ message: 'El area seleccionada no existe' })
+    }
+    const id_area = payload.id_area
+
     const id_mantenimiento = await findNextMaintenanceId(new sql.Request(transaction))
 
     await new sql.Request(transaction)
       .input('id_mantenimiento', sql.Char(10), id_mantenimiento)
       .input('id_ci', sql.VarChar(25), payload.id_ci)
+      .input('id_area', sql.Char(10), id_area)
       .input('fecha_mantenimiento', sql.DateTime, new Date())
       .input('tipo_mantenimiento', sql.VarChar(50), 'Correctivo')
       .input('descripcion_tarea', sql.VarChar(sql.MAX), payload.descripcion_falla)
@@ -1343,6 +2020,7 @@ app.post('/api/reportes', ...requireAnyAuth, async (req, res) => {
         INSERT INTO Mantenimientos (
           id_mantenimiento,
           id_ci,
+          id_area,
           fecha_mantenimiento,
           tipo_mantenimiento,
           descripcion_tarea,
@@ -1352,6 +2030,7 @@ app.post('/api/reportes', ...requireAnyAuth, async (req, res) => {
         VALUES (
           @id_mantenimiento,
           @id_ci,
+          @id_area,
           @fecha_mantenimiento,
           @tipo_mantenimiento,
           @descripcion_tarea,
@@ -1360,13 +2039,40 @@ app.post('/api/reportes', ...requireAnyAuth, async (req, res) => {
         )
       `)
 
+    // Obtener el id_edificio para calcular bono de proximidad
+    const edificioRes = await new sql.Request(transaction)
+      .input('id_sublocalizacion', sql.Char(10), payload.id_sublocalizacion)
+      .query(`SELECT id_edificio FROM Sublocalizaciones WHERE id_sublocalizacion = @id_sublocalizacion`)
+    const id_edificioAsign = edificioRes.recordset?.[0]?.id_edificio || payload.id_edificio
+
+    // 🤖 Motor de asignación automática (dentro de la misma transacción SERIALIZABLE)
+    let asignacion = { asignado: false, razon: 'error_interno' }
+    try {
+      asignacion = await autoAssignTecnico(
+        transaction,
+        id_mantenimiento,
+        id_area,
+        id_edificioAsign,
+        new Date()
+      )
+    } catch (assignErr) {
+      // Si el motor falla, el ticket queda Pendiente pero no se aborta el commit
+      console.warn('Motor de asignación falló (ticket queda Pendiente):', assignErr?.message)
+      asignacion = { asignado: false, razon: 'error_motor' }
+    }
+
     await transaction.commit()
     transactionFinished = true
 
     return res.status(201).json({
-      message: 'Reporte creado correctamente',
-      id_reporte: id_mantenimiento,
-      estado: 'Pendiente',
+      message: asignacion.asignado
+        ? `Reporte creado y asignado automaticamente al tecnico ${asignacion.id_tecnico}`
+        : 'Reporte creado correctamente. Pendiente de asignacion manual.',
+      id_reporte:  id_mantenimiento,
+      estado:      asignacion.asignado ? 'Asignado' : 'Pendiente',
+      asignado:    asignacion.asignado,
+      id_tecnico:  asignacion.id_tecnico || null,
+      razon_no_asignado: asignacion.asignado ? undefined : asignacion.razon,
     })
   } catch (err) {
     if (!transactionFinished) {
@@ -1407,16 +2113,20 @@ app.get('/api/reportes', ...requireAnyAuth, async (req, res) => {
           m.fecha_valoracion,
           m.fecha_mantenimiento AS fecha_reporte,
           COALESCE(m.estado, 'Pendiente') AS estado,
-          COALESCE(m.prioridad, 'Sin priorizar') AS prioridad,
+          COALESCE(srv.prioridad, 'Sin priorizar') AS prioridad,
           e.nombre_edificio,
           s.nombre_sublocalizacion,
           ci.nombre_equipo,
           ci.numero_serie,
+          m.id_area,
+          a.nombre_area,
           t.nombre_completo AS tecnico_asignado
         FROM Mantenimientos m
         JOIN Elementos_Configuracion ci ON ci.id_ci = m.id_ci
         JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
         JOIN Edificios e ON e.id_edificio = s.id_edificio
+        LEFT JOIN Servicios srv ON srv.id_servicio = m.id_servicio
+        LEFT JOIN Areas a ON a.id_area = m.id_area
         LEFT JOIN Usuarios t ON t.id_usuario = m.id_tecnico_asignado
         WHERE m.id_usuario_reporta = @id_usuario_reporta
         ORDER BY m.fecha_mantenimiento DESC, m.id_mantenimiento DESC
@@ -1502,11 +2212,13 @@ app.get('/api/reportes/:id_reporte', ...requireAnyAuth, async (req, res) => {
           m.descripcion_tarea AS descripcion_falla,
           m.fecha_mantenimiento AS fecha_reporte,
           COALESCE(m.estado, 'Pendiente') AS estado,
-          COALESCE(m.prioridad, 'Sin priorizar') AS prioridad,
+          COALESCE(srv.prioridad, 'Sin priorizar') AS prioridad,
           e.nombre_edificio,
           s.nombre_sublocalizacion,
           ci.nombre_equipo,
           ci.numero_serie,
+          m.id_area,
+          a.nombre_area,
           u.nombre_completo AS usuario_reporta,
           t.nombre_completo AS tecnico_asignado,
           m.calificacion_servicio,
@@ -1516,6 +2228,8 @@ app.get('/api/reportes/:id_reporte', ...requireAnyAuth, async (req, res) => {
         JOIN Elementos_Configuracion ci ON ci.id_ci = m.id_ci
         JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
         JOIN Edificios e ON e.id_edificio = s.id_edificio
+        LEFT JOIN Servicios srv ON srv.id_servicio = m.id_servicio
+        LEFT JOIN Areas a ON a.id_area = m.id_area
         LEFT JOIN Usuarios u ON u.id_usuario = m.id_usuario_reporta
         LEFT JOIN Usuarios t ON t.id_usuario = m.id_tecnico_asignado
         WHERE m.id_mantenimiento = @id_reporte
@@ -1615,17 +2329,21 @@ app.get('/api/admin/reportes/pendientes', ...requireAdmin, async (_req, res) => 
         m.descripcion_tarea AS descripcion_falla,
         m.fecha_mantenimiento AS fecha_reporte,
         COALESCE(m.estado, 'Pendiente') AS estado,
-        COALESCE(m.prioridad, 'Sin priorizar') AS prioridad,
+        COALESCE(srv.prioridad, 'Sin priorizar') AS prioridad,
         e.nombre_edificio,
         s.nombre_sublocalizacion,
         ci.nombre_equipo,
         ci.numero_serie,
+        m.id_area,
+        a.nombre_area,
         u.id_usuario AS id_usuario_reporta,
         u.nombre_completo AS usuario_reporta
       FROM Mantenimientos m
       JOIN Elementos_Configuracion ci ON ci.id_ci = m.id_ci
       JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
       JOIN Edificios e ON e.id_edificio = s.id_edificio
+      LEFT JOIN Servicios srv ON srv.id_servicio = m.id_servicio
+      LEFT JOIN Areas a ON a.id_area = m.id_area
       LEFT JOIN Usuarios u ON u.id_usuario = m.id_usuario_reporta
       WHERE COALESCE(m.estado, 'Pendiente') = 'Pendiente'
       ORDER BY m.fecha_mantenimiento ASC, m.id_mantenimiento ASC
@@ -1640,14 +2358,10 @@ app.get('/api/admin/reportes/pendientes', ...requireAdmin, async (_req, res) => 
 
 app.put('/api/admin/reportes/:id_reporte/asignacion', ...requireAdmin, async (req, res) => {
   const id_reporte = toTrimmedString(req.params?.id_reporte)
-  const prioridad = toTrimmedString(req.body?.prioridad)
   const id_tecnico_asignado = toTrimmedString(req.body?.id_tecnico_asignado)
 
-  if (!id_reporte || !prioridad || !id_tecnico_asignado) {
-    return badRequest(res, 'id_reporte, prioridad e id_tecnico_asignado son obligatorios')
-  }
-  if (!PRIORIDADES_VALIDAS.includes(prioridad)) {
-    return badRequest(res, 'La prioridad no es valida')
+  if (!id_reporte || !id_tecnico_asignado) {
+    return badRequest(res, 'id_reporte e id_tecnico_asignado son obligatorios')
   }
 
   try {
@@ -1673,12 +2387,10 @@ app.put('/api/admin/reportes/:id_reporte/asignacion', ...requireAdmin, async (re
     const updateResult = await pool
       .request()
       .input('id_reporte', sql.Char(10), id_reporte)
-      .input('prioridad', sql.VarChar(20), prioridad)
       .input('id_tecnico_asignado', sql.Char(15), id_tecnico_asignado)
       .query(`
         UPDATE Mantenimientos
-        SET prioridad = @prioridad,
-            id_tecnico_asignado = @id_tecnico_asignado,
+        SET id_tecnico_asignado = @id_tecnico_asignado,
             estado = 'Asignado'
         WHERE id_mantenimiento = @id_reporte
       `)
@@ -1690,6 +2402,78 @@ app.put('/api/admin/reportes/:id_reporte/asignacion', ...requireAdmin, async (re
     return res.status(200).json({ message: 'Reporte asignado correctamente' })
   } catch (err) {
     console.error('Error en PUT /api/admin/reportes/:id_reporte/asignacion:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+// ── Asignación automática manual (admin): permite re-disparar el motor
+//    sobre un ticket que quedó en Pendiente sin ser asignado.
+app.post('/api/admin/reportes/:id_reporte/auto-asignar', ...requireAdmin, async (req, res) => {
+  const id_reporte = toTrimmedString(req.params?.id_reporte)
+  if (!id_reporte) return badRequest(res, 'El id_reporte es obligatorio')
+
+  const pool = await getPool()
+  if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+  await ensureWorkflowColumns(pool)
+
+  // Obtener datos del ticket necesarios para el motor
+  const ticketRes = await pool
+    .request()
+    .input('id_reporte', sql.Char(10), id_reporte)
+    .query(`
+      SELECT
+        m.id_area,
+        m.estado,
+        s.id_edificio
+      FROM Mantenimientos m
+      JOIN Elementos_Configuracion ci ON ci.id_ci = m.id_ci
+      JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
+      WHERE m.id_mantenimiento = @id_reporte
+    `)
+
+  const ticket = ticketRes.recordset?.[0]
+  if (!ticket) return res.status(404).json({ message: 'Reporte no encontrado' })
+  if (!ticket.id_area) return res.status(409).json({ message: 'El reporte no tiene área asignada. Actualiza el área antes de auto-asignar.' })
+  if (!['Pendiente', 'Asignado'].includes(ticket.estado)) {
+    return res.status(409).json({ message: `No se puede re-asignar un ticket en estado '${ticket.estado}'` })
+  }
+
+  const transaction = new sql.Transaction(pool)
+  let transactionFinished = false
+  try {
+    await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE)
+
+    const asignacion = await autoAssignTecnico(
+      transaction,
+      id_reporte,
+      ticket.id_area,
+      ticket.id_edificio,
+      new Date()
+    )
+
+    await transaction.commit()
+    transactionFinished = true
+
+    if (!asignacion.asignado) {
+      return res.status(200).json({
+        message: 'No se encontró técnico disponible.',
+        asignado: false,
+        razon: asignacion.razon,
+      })
+    }
+
+    return res.status(200).json({
+      message: `Ticket asignado automaticamente al tecnico ${asignacion.id_tecnico}`,
+      asignado: true,
+      id_tecnico: asignacion.id_tecnico,
+      score: asignacion.score,
+    })
+  } catch (err) {
+    if (!transactionFinished) {
+      try { await transaction.rollback() } catch {}
+    }
+    console.error('Error en POST /api/admin/reportes/:id_reporte/auto-asignar:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
   }
 })
@@ -1714,7 +2498,7 @@ app.get('/api/tecnico/servicios', ...requireTecnico, async (req, res) => {
           m.descripcion_tarea AS descripcion_falla,
           m.fecha_mantenimiento AS fecha_reporte,
           COALESCE(m.estado, 'Pendiente') AS estado,
-          COALESCE(m.prioridad, 'Sin priorizar') AS prioridad,
+          COALESCE(srv.prioridad, 'Sin priorizar') AS prioridad,
           e.nombre_edificio,
           s.nombre_sublocalizacion,
           ci.nombre_equipo,
@@ -1724,6 +2508,7 @@ app.get('/api/tecnico/servicios', ...requireTecnico, async (req, res) => {
         JOIN Elementos_Configuracion ci ON ci.id_ci = m.id_ci
         JOIN Sublocalizaciones s ON s.id_sublocalizacion = ci.id_sublocalizacion
         JOIN Edificios e ON e.id_edificio = s.id_edificio
+        LEFT JOIN Servicios srv ON srv.id_servicio = m.id_servicio
         LEFT JOIN Usuarios u ON u.id_usuario = m.id_usuario_reporta
         WHERE m.id_tecnico_asignado = @id_tecnico_asignado
         ORDER BY m.fecha_mantenimiento DESC, m.id_mantenimiento DESC
@@ -1777,15 +2562,21 @@ app.get('/api/usuarios', ...requireAdmin, async (_req, res) => {
     const pool = await getPool()
     if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
 
+    await ensureWorkflowColumns(pool)
+
     const result = await pool.request().query(`
       SELECT
         u.id_usuario,
         u.nombre_completo,
         u.correo,
         u.id_rol,
-        r.nombre_rol
+        r.nombre_rol,
+        t.id_tecnico,
+        t.id_area AS tecnico_id_area,
+        t.horario AS tecnico_horario
       FROM Usuarios u
       JOIN Roles r ON r.id_rol = u.id_rol
+      LEFT JOIN Tecnico t ON t.id_usuario = u.id_usuario
       ORDER BY u.nombre_completo
     `)
     return res.status(200).json(result.recordset)
@@ -1797,29 +2588,51 @@ app.get('/api/usuarios', ...requireAdmin, async (_req, res) => {
 
 app.post('/api/usuarios', ...requireAdmin, async (req, res) => {
   const payload = {
-    id_usuario: toTrimmedString(req.body?.id_usuario),
     nombre_completo: toTrimmedString(req.body?.nombre_completo),
     correo: toTrimmedString(req.body?.correo),
     password: toTrimmedString(req.body?.password),
     id_rol: toTrimmedString(req.body?.id_rol),
+    tecnico: req.body?.tecnico,
   }
 
-  if (!payload.id_usuario || !payload.nombre_completo || !payload.correo || !payload.password || !payload.id_rol) {
-    return badRequest(res, 'id_usuario, nombre_completo, correo, password e id_rol son obligatorios')
+  if (!payload.nombre_completo || !payload.correo || !payload.password || !payload.id_rol) {
+    return badRequest(res, 'nombre_completo, correo, password e id_rol son obligatorios')
   }
 
   try {
     const pool = await getPool()
     if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
 
-    const duplicatedUser = await existsById(
-      pool.request(),
-      'Usuarios',
-      'id_usuario',
-      'id_usuario',
-      payload.id_usuario
-    )
-    if (duplicatedUser) return res.status(409).json({ message: 'El id_usuario ya existe' })
+    await ensureWorkflowColumns(pool)
+
+    const nombreRol = await getRolNombre(pool, payload.id_rol)
+    if (!nombreRol) return badRequest(res, 'Rol no valido')
+
+    const esTecnico = nombreRol === ROLE_TECNICO
+    let idAreaTec = ''
+    let horarioStr = null
+
+    if (esTecnico) {
+      const t = payload.tecnico || {}
+      idAreaTec = toTrimmedString(t.id_area)
+      if (!idAreaTec) return badRequest(res, 'Para rol Tecnico, tecnico.id_area es obligatorio')
+      if (!horarioTecnicoValido(t.horario)) {
+        return badRequest(
+          res,
+          'Para rol Tecnico, indique horario valido (al menos un dia con inicio y fin)'
+        )
+      }
+      horarioStr = stringifyHorario(t.horario)
+      if (!horarioStr) return badRequest(res, 'Horario invalido')
+
+      const areaOk = await pool
+        .request()
+        .input('id_area', sql.Char(10), idAreaTec)
+        .query(`SELECT 1 AS found FROM Areas WHERE id_area = @id_area`)
+      if (!areaOk.recordset?.[0]?.found) {
+        return badRequest(res, 'El area indicada no existe')
+      }
+    }
 
     const duplicatedMail = await pool
       .request()
@@ -1829,20 +2642,60 @@ app.post('/api/usuarios', ...requireAdmin, async (req, res) => {
       return res.status(409).json({ message: 'El correo ya existe' })
     }
 
+    const roleCode = fourCharRoleCode(nombreRol)
     const password_hash = await bcrypt.hash(payload.password, 10)
-    await pool
-      .request()
-      .input('id_usuario', sql.Char(15), payload.id_usuario)
-      .input('nombre_completo', sql.VarChar(150), payload.nombre_completo)
-      .input('correo', sql.VarChar(100), payload.correo)
-      .input('password_hash', sql.VarChar(255), password_hash)
-      .input('id_rol', sql.Char(10), payload.id_rol)
-      .query(`
-        INSERT INTO Usuarios (id_usuario, nombre_completo, correo, password_hash, id_rol)
-        VALUES (@id_usuario, @nombre_completo, @correo, @password_hash, @id_rol)
-      `)
 
-    return res.status(201).json({ message: 'Usuario creado correctamente' })
+    const transaction = new sql.Transaction(pool)
+    await transaction.begin()
+    try {
+      let id_usuario = await findNextUsuarioIdForRole(new sql.Request(transaction), roleCode)
+      for (let i = 0; i < 5; i++) {
+        const dup = await existsById(
+          new sql.Request(transaction),
+          'Usuarios',
+          'id_usuario',
+          'id_usuario',
+          id_usuario
+        )
+        if (!dup) break
+        id_usuario = await findNextUsuarioIdForRole(new sql.Request(transaction), roleCode)
+      }
+
+      await new sql.Request(transaction)
+        .input('id_usuario', sql.Char(15), id_usuario)
+        .input('nombre_completo', sql.VarChar(150), payload.nombre_completo)
+        .input('correo', sql.VarChar(100), payload.correo)
+        .input('password_hash', sql.VarChar(255), password_hash)
+        .input('id_rol', sql.Char(10), payload.id_rol)
+        .query(`
+          INSERT INTO Usuarios (id_usuario, nombre_completo, correo, password_hash, id_rol)
+          VALUES (@id_usuario, @nombre_completo, @correo, @password_hash, @id_rol)
+        `)
+
+      let id_tecnico = null
+      if (esTecnico) {
+        id_tecnico = await findNextTecnicoId(new sql.Request(transaction))
+        await new sql.Request(transaction)
+          .input('id_tecnico', sql.Char(10), id_tecnico)
+          .input('id_usuario', sql.Char(15), id_usuario)
+          .input('id_area', sql.Char(10), idAreaTec)
+          .input('horario', sql.VarChar(500), horarioStr)
+          .query(`
+            INSERT INTO Tecnico (id_tecnico, id_usuario, id_area, horario)
+            VALUES (@id_tecnico, @id_usuario, @id_area, @horario)
+          `)
+      }
+
+      await transaction.commit()
+      return res.status(201).json({
+        message: 'Usuario creado correctamente',
+        id_usuario,
+        id_tecnico,
+      })
+    } catch (innerErr) {
+      await transaction.rollback()
+      throw innerErr
+    }
   } catch (err) {
     console.error('Error en POST /api/usuarios:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
@@ -1856,6 +2709,7 @@ app.put('/api/usuarios/:id_usuario', ...requireAdmin, async (req, res) => {
     correo: toTrimmedString(req.body?.correo),
     password: toTrimmedString(req.body?.password),
     id_rol: toTrimmedString(req.body?.id_rol),
+    tecnico: req.body?.tecnico,
   }
 
   if (!id_usuario || !payload.nombre_completo || !payload.correo || !payload.id_rol) {
@@ -1866,34 +2720,104 @@ app.put('/api/usuarios/:id_usuario', ...requireAdmin, async (req, res) => {
     const pool = await getPool()
     if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
 
-    const request = pool
-      .request()
-      .input('id_usuario', sql.Char(15), id_usuario)
-      .input('nombre_completo', sql.VarChar(150), payload.nombre_completo)
-      .input('correo', sql.VarChar(100), payload.correo)
-      .input('id_rol', sql.Char(10), payload.id_rol)
+    await ensureWorkflowColumns(pool)
 
-    let setPasswordClause = ''
-    if (payload.password) {
-      const password_hash = await bcrypt.hash(payload.password, 10)
-      request.input('password_hash', sql.VarChar(255), password_hash)
-      setPasswordClause = ', password_hash = @password_hash'
+    const nombreRolNuevo = await getRolNombre(pool, payload.id_rol)
+    if (!nombreRolNuevo) return badRequest(res, 'Rol no valido')
+    const esTecnico = nombreRolNuevo === ROLE_TECNICO
+
+    let idAreaTec = ''
+    let horarioStr = null
+    if (esTecnico) {
+      const t = payload.tecnico || {}
+      idAreaTec = toTrimmedString(t.id_area)
+      if (!idAreaTec) return badRequest(res, 'Para rol Tecnico, tecnico.id_area es obligatorio')
+      if (!horarioTecnicoValido(t.horario)) {
+        return badRequest(
+          res,
+          'Para rol Tecnico, indique horario valido (al menos un dia con inicio y fin)'
+        )
+      }
+      horarioStr = stringifyHorario(t.horario)
+      if (!horarioStr) return badRequest(res, 'Horario invalido')
+
+      const areaOk = await pool
+        .request()
+        .input('id_area', sql.Char(10), idAreaTec)
+        .query(`SELECT 1 AS found FROM Areas WHERE id_area = @id_area`)
+      if (!areaOk.recordset?.[0]?.found) {
+        return badRequest(res, 'El area indicada no existe')
+      }
     }
 
-    const result = await request.query(`
-      UPDATE Usuarios
-      SET nombre_completo = @nombre_completo,
-          correo = @correo,
-          id_rol = @id_rol
-          ${setPasswordClause}
-      WHERE id_usuario = @id_usuario
-    `)
+    const password_hash = payload.password ? await bcrypt.hash(payload.password, 10) : null
 
-    if (!result.rowsAffected?.[0]) {
-      return res.status(404).json({ message: 'Usuario no encontrado' })
+    const transaction = new sql.Transaction(pool)
+    await transaction.begin()
+    try {
+      const upd = new sql.Request(transaction)
+        .input('id_usuario', sql.Char(15), id_usuario)
+        .input('nombre_completo', sql.VarChar(150), payload.nombre_completo)
+        .input('correo', sql.VarChar(100), payload.correo)
+        .input('id_rol', sql.Char(10), payload.id_rol)
+
+      let setPasswordClause = ''
+      if (password_hash) {
+        upd.input('password_hash', sql.VarChar(255), password_hash)
+        setPasswordClause = ', password_hash = @password_hash'
+      }
+
+      const result = await upd.query(`
+        UPDATE Usuarios
+        SET nombre_completo = @nombre_completo,
+            correo = @correo,
+            id_rol = @id_rol
+            ${setPasswordClause}
+        WHERE id_usuario = @id_usuario
+      `)
+
+      if (!result.rowsAffected?.[0]) {
+        await transaction.rollback()
+        return res.status(404).json({ message: 'Usuario no encontrado' })
+      }
+
+      if (esTecnico) {
+        const rowTec = await new sql.Request(transaction)
+          .input('id_usuario', sql.Char(15), id_usuario)
+          .query(`SELECT id_tecnico FROM Tecnico WHERE id_usuario = @id_usuario`)
+
+        if (rowTec.recordset?.[0]?.id_tecnico) {
+          await new sql.Request(transaction)
+            .input('id_usuario', sql.Char(15), id_usuario)
+            .input('id_area', sql.Char(10), idAreaTec)
+            .input('horario', sql.VarChar(500), horarioStr)
+            .query(
+              `UPDATE Tecnico SET id_area = @id_area, horario = @horario WHERE id_usuario = @id_usuario`
+            )
+        } else {
+          const id_tecnico = await findNextTecnicoId(new sql.Request(transaction))
+          await new sql.Request(transaction)
+            .input('id_tecnico', sql.Char(10), id_tecnico)
+            .input('id_usuario', sql.Char(15), id_usuario)
+            .input('id_area', sql.Char(10), idAreaTec)
+            .input('horario', sql.VarChar(500), horarioStr)
+            .query(`
+              INSERT INTO Tecnico (id_tecnico, id_usuario, id_area, horario)
+              VALUES (@id_tecnico, @id_usuario, @id_area, @horario)
+            `)
+        }
+      } else {
+        await new sql.Request(transaction)
+          .input('id_usuario', sql.Char(15), id_usuario)
+          .query(`DELETE FROM Tecnico WHERE id_usuario = @id_usuario`)
+      }
+
+      await transaction.commit()
+      return res.status(200).json({ message: 'Usuario actualizado correctamente' })
+    } catch (innerErr) {
+      await transaction.rollback()
+      throw innerErr
     }
-
-    return res.status(200).json({ message: 'Usuario actualizado correctamente' })
   } catch (err) {
     console.error('Error en PUT /api/usuarios/:id_usuario:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
@@ -1910,6 +2834,12 @@ app.delete('/api/usuarios/:id_usuario', ...requireAdmin, async (req, res) => {
   try {
     const pool = await getPool()
     if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+
+    await ensureWorkflowColumns(pool)
+
+    await pool.request().input('id_usuario', sql.Char(15), id_usuario).query(`
+      DELETE FROM Tecnico WHERE id_usuario = @id_usuario
+    `)
 
     const result = await pool
       .request()

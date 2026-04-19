@@ -31,6 +31,21 @@ CREATE TABLE Tipo_CI (
     nombre_tipo VARCHAR(100) NOT NULL -- Ej: Laptop, Proyector
 );
 
+-- Catálogo de áreas y servicios (tickets)
+CREATE TABLE Areas (
+    id_area CHAR(10) PRIMARY KEY,
+    nombre_area VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE Servicios (
+    id_servicio CHAR(10) PRIMARY KEY,
+    nombre VARCHAR(150) NOT NULL,
+    id_area CHAR(10) NOT NULL REFERENCES Areas(id_area),
+    descripcion VARCHAR(MAX) NULL,
+    tiempo_servicio INT NULL,
+    prioridad VARCHAR(20) NOT NULL
+);
+
 -- 3. Usuarios
 CREATE TABLE Usuarios (
     id_usuario CHAR(15) PRIMARY KEY,
@@ -40,7 +55,19 @@ CREATE TABLE Usuarios (
     id_rol char(10) REFERENCES Roles(id_rol)
 );
 
--- 4. Elementos de Configuraci�n (El n�cleo)
+-- Perfil de tecnicos (area de cobertura y horario)
+CREATE TABLE Tecnico (
+    id_tecnico CHAR(10) NOT NULL,
+    id_usuario CHAR(15) NOT NULL,
+    id_area CHAR(10) NOT NULL,
+    horario VARCHAR(500) NULL,
+    CONSTRAINT PK_Tecnico PRIMARY KEY (id_tecnico),
+    CONSTRAINT UQ_Tecnico_Usuario UNIQUE (id_usuario),
+    CONSTRAINT FK_Tecnico_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario),
+    CONSTRAINT FK_Tecnico_Area FOREIGN KEY (id_area) REFERENCES Areas(id_area)
+);
+
+-- 4. Elementos de Configuración (El núcleo)
 CREATE TABLE Elementos_Configuracion (
     id_ci VARCHAR(25) PRIMARY KEY,
     numero_serie VARCHAR(50) UNIQUE NOT NULL,
@@ -66,7 +93,8 @@ CREATE TABLE Mantenimientos (
     comentario_valoracion VARCHAR(500),
     fecha_valoracion DATETIME,
     estado VARCHAR(20) DEFAULT 'Pendiente', -- Pendiente, Asignado, En Proceso, Cerrado
-    prioridad VARCHAR(20), -- Baja, Media, Alta, Critica
+    id_servicio CHAR(10) NULL REFERENCES Servicios(id_servicio),
+    id_area CHAR(10) NULL REFERENCES Areas(id_area),
     id_tecnico_asignado CHAR(15) REFERENCES Usuarios(id_usuario),
     tecnico_externo VARCHAR(100), -- Por si no es un usuario del sistema
     costo DECIMAL(10, 2),
