@@ -62,6 +62,10 @@ type HistorialCambioCI = {
 
 const DESKTOP_TIPO_CI_ID = "T04";
 
+/** Los ids CHAR(n) de SQL Server llegan con espacios de relleno; normalizar antes de comparar o enviar. */
+const trimTipoCiId = (id: string) => id.trim();
+const isDesktopTipoCiId = (id: string) => trimTipoCiId(id) === DESKTOP_TIPO_CI_ID;
+
 type DesktopHardwareInterno = {
   procesador: string;
   placaMadre: string;
@@ -75,21 +79,8 @@ type DesktopHardwareInterno = {
   redCableada: string;
 };
 
-type DesktopHardwareExterno = {
-  monitor: string;
-  monitorSecundario: string;
-  teclado: string;
-  raton: string;
-  webcam: string;
-  altavoces: string;
-  microfono: string;
-  ups: string;
-  otros: string;
-};
-
 type DesktopHardwareSpecs = {
   interno: DesktopHardwareInterno;
-  externo: DesktopHardwareExterno;
 };
 
 const emptyDesktopHardwareSpecs = (): DesktopHardwareSpecs => ({
@@ -105,17 +96,6 @@ const emptyDesktopHardwareSpecs = (): DesktopHardwareSpecs => ({
     refrigeracion: "",
     redCableada: "",
   },
-  externo: {
-    monitor: "",
-    monitorSecundario: "",
-    teclado: "",
-    raton: "",
-    webcam: "",
-    altavoces: "",
-    microfono: "",
-    ups: "",
-    otros: "",
-  },
 });
 
 const parseDesktopHardwareFromApi = (raw: string | null | undefined): DesktopHardwareSpecs => {
@@ -126,9 +106,6 @@ const parseDesktopHardwareFromApi = (raw: string | null | undefined): DesktopHar
     if (!parsed || typeof parsed !== "object") return base;
     if (parsed.interno && typeof parsed.interno === "object") {
       Object.assign(base.interno, parsed.interno);
-    }
-    if (parsed.externo && typeof parsed.externo === "object") {
-      Object.assign(base.externo, parsed.externo);
     }
     return base;
   } catch {
@@ -147,18 +124,6 @@ const DESKTOP_HW_INTERNO_FIELDS: { key: keyof DesktopHardwareInterno; label: str
   { key: "gabinete", label: "Gabinete" },
   { key: "refrigeracion", label: "Refrigeracion" },
   { key: "redCableada", label: "Red (cableada / NIC)" },
-];
-
-const DESKTOP_HW_EXTERNO_FIELDS: { key: keyof DesktopHardwareExterno; label: string }[] = [
-  { key: "monitor", label: "Monitor principal" },
-  { key: "monitorSecundario", label: "Monitor secundario" },
-  { key: "teclado", label: "Teclado" },
-  { key: "raton", label: "Raton" },
-  { key: "webcam", label: "Camara / Webcam" },
-  { key: "altavoces", label: "Altavoces" },
-  { key: "microfono", label: "Microfono" },
-  { key: "ups", label: "UPS / No break" },
-  { key: "otros", label: "Otros perifericos" },
 ];
 
 const initialBuilding = { id_edificio: "", nombre_edificio: "", descripcion_edificio: "" };
@@ -340,7 +305,8 @@ export default function AdminActivos() {
   const sublocalizacionesFiltradas = sublocalizaciones.filter((item) => item.id_edificio === ciForm.id_edificio);
 
   const typeCode = useMemo(() => {
-    const tipo = catalogos.tipos_ci.find((item) => item.id_tipo_ci === ciForm.id_tipo_ci);
+    const tid = trimTipoCiId(ciForm.id_tipo_ci);
+    const tipo = catalogos.tipos_ci.find((item) => trimTipoCiId(item.id_tipo_ci) === tid);
     return tipo ? norm(tipo.nombre_tipo, 4) : "";
   }, [catalogos.tipos_ci, ciForm.id_tipo_ci]);
 
@@ -366,7 +332,7 @@ export default function AdminActivos() {
   const generatedCiId = typeCode && locationCode ? `${typeCode}-${locationCode}-${ciCorrelative}` : "";
   const displayCiId = editingCiId ?? generatedCiId;
   const isEditingCi = Boolean(editingCiId);
-  const isDesktopCi = ciForm.id_tipo_ci === DESKTOP_TIPO_CI_ID;
+  const isDesktopCi = isDesktopTipoCiId(ciForm.id_tipo_ci);
 
   const inventoryRows = inventario.filter((item) => {
     if (filterBuilding && item.nombre_edificio !== filterBuilding) return false;
@@ -639,13 +605,13 @@ export default function AdminActivos() {
       nombre_equipo: item.nombre_equipo || "",
       modelo: item.modelo || "",
       estado: item.estado,
-      id_tipo_ci: item.id_tipo_ci,
+      id_tipo_ci: trimTipoCiId(item.id_tipo_ci),
       id_marca: item.id_marca,
       id_edificio: edificioId,
       id_sublocalizacion: item.id_sublocalizacion,
       id_usuario_responsable: item.id_usuario_responsable || "",
     });
-    if (item.id_tipo_ci === DESKTOP_TIPO_CI_ID) {
+    if (isDesktopTipoCiId(item.id_tipo_ci)) {
       setHardwareSpecs(parseDesktopHardwareFromApi(item.especificaciones_hardware));
     } else {
       setHardwareSpecs(emptyDesktopHardwareSpecs());
@@ -867,7 +833,7 @@ export default function AdminActivos() {
                   </div>
                   <form className="mt-6 space-y-5" onSubmit={submitCi}>
                     <div className="grid gap-5 xl:grid-cols-2">
-                      <label><Label>Tipo de CI</Label><div className="relative"><Wrench className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><select value={ciForm.id_tipo_ci} onChange={(e) => { const v = e.target.value; setCiForm((p) => ({ ...p, id_tipo_ci: v })); if (v !== DESKTOP_TIPO_CI_ID) setHardwareSpecs(emptyDesktopHardwareSpecs()); }} className={`${inputClass(isEditingCi)} pl-12`} disabled={isEditingCi} required><option value="">Selecciona un tipo</option>{catalogos.tipos_ci.map((item) => <option key={item.id_tipo_ci} value={item.id_tipo_ci}>{item.nombre_tipo}</option>)}</select></div></label>
+                      <label><Label>Tipo de CI</Label><div className="relative"><Wrench className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><select value={ciForm.id_tipo_ci ? trimTipoCiId(ciForm.id_tipo_ci) : ""} onChange={(e) => { const v = e.target.value; setCiForm((p) => ({ ...p, id_tipo_ci: v })); if (!isDesktopTipoCiId(v)) setHardwareSpecs(emptyDesktopHardwareSpecs()); }} className={`${inputClass(isEditingCi)} pl-12`} disabled={isEditingCi} required><option value="">Selecciona un tipo</option>{catalogos.tipos_ci.map((item) => <option key={trimTipoCiId(item.id_tipo_ci)} value={trimTipoCiId(item.id_tipo_ci)}>{item.nombre_tipo}</option>)}</select></div></label>
                       <label><Label>Edificio</Label><select value={ciForm.id_edificio} onChange={(e) => setCiForm((p) => ({ ...p, id_edificio: e.target.value }))} className={inputClass(isEditingCi)} disabled={isEditingCi} required><option value="">Selecciona un edificio</option>{catalogos.edificios.map((item) => <option key={item.id_edificio} value={item.id_edificio}>{item.nombre_edificio}</option>)}</select></label>
                     </div>
                     <div className="grid gap-5 xl:grid-cols-2">
@@ -891,49 +857,26 @@ export default function AdminActivos() {
                       <div />
                     </div>
                     {isDesktopCi ? (
-                      <div className="space-y-6 rounded-2xl border border-blue-100 bg-blue-50/50 p-5">
+                      <div className="space-y-4 rounded-2xl border border-blue-100 bg-blue-50/50 p-5">
                         <h4 className="text-sm font-bold uppercase tracking-wide text-[#001f3f]">
-                          Especificaciones de hardware (computadora de escritorio)
+                          Componentes internos (computadora de escritorio)
                         </h4>
-                        <div>
-                          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Componentes internos</p>
-                          <div className="grid gap-4 md:grid-cols-2">
-                            {DESKTOP_HW_INTERNO_FIELDS.map(({ key, label }) => (
-                              <label key={key} className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                                {label}
-                                <input
-                                  className={`${inputClass()} mt-1`}
-                                  value={hardwareSpecs.interno[key]}
-                                  onChange={(e) =>
-                                    setHardwareSpecs((s) => ({
-                                      ...s,
-                                      interno: { ...s.interno, [key]: e.target.value },
-                                    }))
-                                  }
-                                />
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Perifericos externos</p>
-                          <div className="grid gap-4 md:grid-cols-2">
-                            {DESKTOP_HW_EXTERNO_FIELDS.map(({ key, label }) => (
-                              <label key={key} className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                                {label}
-                                <input
-                                  className={`${inputClass()} mt-1`}
-                                  value={hardwareSpecs.externo[key]}
-                                  onChange={(e) =>
-                                    setHardwareSpecs((s) => ({
-                                      ...s,
-                                      externo: { ...s.externo, [key]: e.target.value },
-                                    }))
-                                  }
-                                />
-                              </label>
-                            ))}
-                          </div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {DESKTOP_HW_INTERNO_FIELDS.map(({ key, label }) => (
+                            <label key={key} className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                              {label}
+                              <input
+                                className={`${inputClass()} mt-1`}
+                                value={hardwareSpecs.interno[key]}
+                                onChange={(e) =>
+                                  setHardwareSpecs((s) => ({
+                                    ...s,
+                                    interno: { ...s.interno, [key]: e.target.value },
+                                  }))
+                                }
+                              />
+                            </label>
+                          ))}
                         </div>
                       </div>
                     ) : null}

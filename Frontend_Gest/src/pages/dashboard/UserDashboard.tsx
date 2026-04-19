@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { getToken } from "../../auth/storage";
 import { useNavigate } from "react-router-dom";
+import { ticketEstadoBadgeClasses } from "../../utils/ticketEstadoBadge";
 
 const API_BASE_URL = "http://localhost:4000/api";
 
@@ -36,16 +37,6 @@ const getApiErrorMessage = (error: unknown, fallback: string) => {
   }
   return fallback;
 };
-
-function getEstadoClasses(estado: string) {
-  if (estado.toLowerCase() === "cerrado") {
-    return "bg-emerald-100 text-emerald-800";
-  }
-  if (estado.toLowerCase() === "en proceso") {
-    return "bg-orange-100 text-orange-800";
-  }
-  return "bg-blue-100 text-blue-800";
-}
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -135,7 +126,7 @@ export default function UserDashboard() {
                 <td className="px-4 py-3 text-slate-700">{formatDate(reporte.fecha_reporte)}</td>
                 <td className="px-4 py-3">
                   <span
-                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getEstadoClasses(
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${ticketEstadoBadgeClasses(
                       reporte.estado
                     )}`}
                   >

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import axios from "axios";
 import { ClipboardList } from "lucide-react";
 import { getToken } from "../auth/storage";
+import { ticketEstadoBadgeClasses } from "../utils/ticketEstadoBadge";
 
 const API_BASE_URL = "http://localhost:4000/api";
 
@@ -388,7 +389,9 @@ export default function TecnicoServicios() {
           <p className="mt-1 text-xs text-slate-500">Reportado por: {item.usuario_reporta || "N/D"}</p>
         </div>
         <div className="text-right">
-          <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
+          <span
+            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${ticketEstadoBadgeClasses(item.estado)}`}
+          >
             {item.estado}
           </span>
           <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-amber-700">Prioridad: {item.prioridad}</p>
@@ -650,9 +653,16 @@ export default function TecnicoServicios() {
           <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl sm:p-6">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-xl font-bold text-slate-900">
-                  Hoja de Trabajo {servicioACompletar.id_reporte}
-                </h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-xl font-bold text-slate-900">
+                    Hoja de Trabajo {servicioACompletar.id_reporte}
+                  </h3>
+                  <span
+                    className={`inline-flex rounded-full px-3 py-0.5 text-xs font-semibold ${ticketEstadoBadgeClasses(servicioACompletar.estado)}`}
+                  >
+                    {servicioACompletar.estado}
+                  </span>
+                </div>
                 <p className="text-sm text-slate-600">
                   {servicioACompletar.nombre_equipo || servicioACompletar.id_ci}
                 </p>
