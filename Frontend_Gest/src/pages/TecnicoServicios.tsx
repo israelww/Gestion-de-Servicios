@@ -10,11 +10,15 @@ interface ServicioTecnico {
   id_ci: string;
   tipo_mantenimiento: string;
   descripcion_falla: string;
+  diagnostico_inicial: string | null;
   descripcion_solucion: string | null;
   fecha_reporte: string;
+  fecha_asignacion: string | null;
+  fecha_terminado: string | null;
   fecha_cierre: string | null;
   estado: string;
   prioridad: string;
+  tiempo_servicio: number | null;
   nombre_edificio: string;
   nombre_sublocalizacion: string;
   nombre_equipo: string | null;
@@ -50,6 +54,24 @@ type HistorialCambioCI = {
   detalle_cambio: string;
   fecha_registro: string;
 };
+
+interface ServicioCatalogo {
+  id_servicio: string;
+  nombre: string;
+  descripcion: string | null;
+  tiempo_servicio: number | null;
+  prioridad: string;
+}
+
+interface HojaTrabajoResponse {
+  ticket: ServicioTecnico & {
+    id_area: string | null;
+    nombre_area: string | null;
+  };
+  catalogo_servicios: ServicioCatalogo[];
+  servicios_seleccionados: ServicioCatalogo[];
+  total_minutos_estimados: number;
+}
 
 const initialHistoryForm = {
   fecha_cambio: "",
@@ -100,12 +122,34 @@ export default function TecnicoServicios() {
   const [historyForm, setHistoryForm] = useState(initialHistoryForm);
   const [tecnicoId, setTecnicoId] = useState("");
   const [servicioACompletar, setServicioACompletar] = useState<ServicioTecnico | null>(null);
+  const [hojaTrabajo, setHojaTrabajo] = useState<HojaTrabajoResponse | null>(null);
+  const [hojaLoading, setHojaLoading] = useState(false);
+  const [servicioSearch, setServicioSearch] = useState("");
+  const [diagnosticoForm, setDiagnosticoForm] = useState("");
+  const [serviciosSeleccionados, setServiciosSeleccionados] = useState<string[]>([]);
   const [solucionForm, setSolucionForm] = useState("");
+  const [savingHoja, setSavingHoja] = useState(false);
   const [completingTicket, setCompletingTicket] = useState(false);
   const [detalleCi, setDetalleCi] = useState<CiDetalle | null>(null);
   const [detalleCiLoading, setDetalleCiLoading] = useState(false);
-  const serviciosPendientes = servicios.filter((item) => item.estado !== "Cerrado");
-  const serviciosCerrados = servicios.filter((item) => item.estado === "Cerrado");
+  const estadosFinales = ["Terminado", "Cerrado", "Liberado"];
+  const serviciosPendientes = servicios.filter((item) => !estadosFinales.includes(item.estado));
+  const serviciosCerrados = servicios.filter((item) => estadosFinales.includes(item.estado));
+  const selectedSet = new Set(serviciosSeleccionados);
+  const serviciosFiltrados =
+    hojaTrabajo?.catalogo_servicios.filter((servicio) => {
+      const term = servicioSearch.trim().toLowerCase();
+      if (!term) return true;
+      return `${servicio.nombre} ${servicio.descripcion || ""} ${servicio.prioridad}`
+        .toLowerCase()
+        .includes(term);
+    }) || [];
+  const totalMinutosSeleccionados =
+    hojaTrabajo?.catalogo_servicios.reduce(
+      (total, servicio) =>
+        selectedSet.has(servicio.id_servicio) ? total + (Number(servicio.tiempo_servicio) || 0) : total,
+      0
+    ) || 0;
 
   const loadServicios = async () => {
     setLoading(true);
@@ -211,16 +255,77 @@ export default function TecnicoServicios() {
     }
   };
 
-  const openCompletarModal = (item: ServicioTecnico) => {
+  const openCompletarModal = async (item: ServicioTecnico) => {
     setServicioACompletar(item);
+    setHojaTrabajo(null);
+    setServicioSearch("");
+    setDiagnosticoForm(item.diagnostico_inicial || "");
+    setServiciosSeleccionados([]);
     setSolucionForm(item.descripcion_solucion || "");
     setStatusMessage("");
     setErrorMessage("");
+    setHojaLoading(true);
+    try {
+      const response = await axios.get<HojaTrabajoResponse>(
+        `${API_BASE_URL}/tecnico/servicios/${item.id_reporte}/hoja-trabajo`,
+        { headers: headers() }
+      );
+      setHojaTrabajo(response.data);
+      setDiagnosticoForm(response.data.ticket.diagnostico_inicial || "");
+      setSolucionForm(response.data.ticket.descripcion_solucion || "");
+      setServiciosSeleccionados(
+        (response.data.servicios_seleccionados || []).map((servicio) => servicio.id_servicio)
+      );
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, "No se pudo cargar la hoja de trabajo."));
+    } finally {
+      setHojaLoading(false);
+    }
   };
 
   const closeCompletarModal = () => {
     setServicioACompletar(null);
+    setHojaTrabajo(null);
+    setServicioSearch("");
+    setDiagnosticoForm("");
+    setServiciosSeleccionados([]);
     setSolucionForm("");
+  };
+
+  const toggleServicioSeleccionado = (idServicio: string) => {
+    setServiciosSeleccionados((prev) =>
+      prev.includes(idServicio)
+        ? prev.filter((item) => item !== idServicio)
+        : [...prev, idServicio]
+    );
+  };
+
+  const saveHojaTrabajo = async () => {
+    if (!servicioACompletar) return;
+    if (!diagnosticoForm.trim()) {
+      setErrorMessage("Escribe el diagnostico inicial antes de guardar.");
+      return;
+    }
+
+    setSavingHoja(true);
+    setStatusMessage("");
+    setErrorMessage("");
+    try {
+      await axios.put(
+        `${API_BASE_URL}/tecnico/servicios/${servicioACompletar.id_reporte}/hoja-trabajo`,
+        {
+          diagnostico_inicial: diagnosticoForm,
+          servicios_seleccionados: serviciosSeleccionados,
+        },
+        { headers: headers() }
+      );
+      setStatusMessage("Hoja de trabajo guardada correctamente.");
+      await loadServicios();
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, "No se pudo guardar la hoja de trabajo."));
+    } finally {
+      setSavingHoja(false);
+    }
   };
 
   const submitCompletarTicket = async (event: FormEvent<HTMLFormElement>) => {
@@ -233,7 +338,11 @@ export default function TecnicoServicios() {
     try {
       await axios.put(
         `${API_BASE_URL}/tecnico/servicios/${servicioACompletar.id_reporte}/completar`,
-        { descripcion_solucion: solucionForm },
+        {
+          diagnostico_inicial: diagnosticoForm,
+          servicios_seleccionados: serviciosSeleccionados,
+          descripcion_solucion: solucionForm,
+        },
         { headers: headers() }
       );
       setStatusMessage(`Ticket ${servicioACompletar.id_reporte} completado correctamente.`);
@@ -293,8 +402,10 @@ export default function TecnicoServicios() {
       ) : null}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-slate-500">
-          Asignado desde: {formatDate(item.fecha_reporte)}
-          {item.fecha_cierre ? ` | Cerrado: ${formatDate(item.fecha_cierre)}` : ""}
+          Asignado desde: {formatDate(item.fecha_asignacion || item.fecha_reporte)}
+          {item.fecha_terminado || item.fecha_cierre
+            ? ` | Terminado: ${formatDate(item.fecha_terminado || item.fecha_cierre || "")}`
+            : ""}
         </p>
         <div className="inline-flex items-center gap-2">
           <button
@@ -314,15 +425,15 @@ export default function TecnicoServicios() {
           </button>
           <button
             type="button"
-            onClick={() => openCompletarModal(item)}
-            disabled={item.estado === "Cerrado"}
+            onClick={() => void openCompletarModal(item)}
+            disabled={estadosFinales.includes(item.estado)}
             className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
-              item.estado === "Cerrado"
+              estadosFinales.includes(item.estado)
                 ? "cursor-not-allowed bg-slate-100 text-slate-400"
                 : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
             }`}
           >
-            Completar Ticket
+            Hoja de Trabajo
           </button>
         </div>
       </div>
@@ -536,11 +647,11 @@ export default function TecnicoServicios() {
 
       {servicioACompletar ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
+          <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl sm:p-6">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-xl font-bold text-slate-900">
-                  Completar Ticket {servicioACompletar.id_reporte}
+                  Hoja de Trabajo {servicioACompletar.id_reporte}
                 </h3>
                 <p className="text-sm text-slate-600">
                   {servicioACompletar.nombre_equipo || servicioACompletar.id_ci}
@@ -555,29 +666,132 @@ export default function TecnicoServicios() {
               </button>
             </div>
 
-            <form className="space-y-4" onSubmit={submitCompletarTicket}>
-              <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-700">
-                  Descripcion de la Solucion
-                </span>
-                <textarea
-                  value={solucionForm}
-                  onChange={(e) => setSolucionForm(e.target.value)}
-                  rows={6}
-                  className={`${inputClass()} min-h-[150px]`}
-                  placeholder="Describe como resolviste el problema y que acciones realizaste."
-                  required
-                />
-              </label>
+            {hojaLoading ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-600">
+                Cargando hoja de trabajo...
+              </div>
+            ) : null}
 
-              <button
-                type="submit"
-                disabled={completingTicket}
-                className="w-full rounded-xl bg-emerald-700 px-6 py-3 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-70"
-              >
-                {completingTicket ? "Completando..." : "Completar Ticket"}
-              </button>
-            </form>
+            {!hojaLoading ? (
+              <form className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]" onSubmit={submitCompletarTicket}>
+                <section className="space-y-4">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase text-slate-500">Falla reportada</p>
+                    <p className="mt-2 whitespace-pre-line text-sm text-slate-700">
+                      {servicioACompletar.descripcion_falla}
+                    </p>
+                    <p className="mt-3 text-xs text-slate-500">
+                      Asignado: {formatDate(servicioACompletar.fecha_asignacion || servicioACompletar.fecha_reporte)}
+                    </p>
+                  </div>
+
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-700">
+                      Diagnostico inicial
+                    </span>
+                    <textarea
+                      value={diagnosticoForm}
+                      onChange={(e) => setDiagnosticoForm(e.target.value)}
+                      rows={5}
+                      className={`${inputClass()} min-h-[130px]`}
+                      placeholder="Describe la causa probable y el estado encontrado."
+                      required
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-700">
+                      Solucion aplicada
+                    </span>
+                    <textarea
+                      value={solucionForm}
+                      onChange={(e) => setSolucionForm(e.target.value)}
+                      rows={5}
+                      className={`${inputClass()} min-h-[130px]`}
+                      placeholder="Describe como resolviste el problema y que acciones realizaste."
+                      required
+                    />
+                  </label>
+                </section>
+
+                <section className="space-y-4">
+                  <div className="rounded-lg border border-slate-200 bg-white p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-base font-bold text-slate-900">Catalogo de Servicios</h4>
+                        <p className="text-sm text-slate-600">
+                          Selecciona las acciones realizadas para sumar el tiempo estimado.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                        {totalMinutosSeleccionados} min
+                      </span>
+                    </div>
+
+                    <input
+                      value={servicioSearch}
+                      onChange={(e) => setServicioSearch(e.target.value)}
+                      className="mt-4 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-transparent focus:ring-2 focus:ring-blue-900"
+                      placeholder="Buscar por nombre, descripcion o prioridad"
+                    />
+
+                    <div className="mt-4 max-h-[320px] space-y-2 overflow-y-auto pr-1">
+                      {!serviciosFiltrados.length ? (
+                        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                          No hay servicios para esta busqueda.
+                        </div>
+                      ) : null}
+
+                      {serviciosFiltrados.map((servicio) => (
+                        <label
+                          key={servicio.id_servicio}
+                          className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm hover:bg-slate-100"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedSet.has(servicio.id_servicio)}
+                            onChange={() => toggleServicioSeleccionado(servicio.id_servicio)}
+                            className="mt-1 h-4 w-4"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block font-semibold text-slate-900">{servicio.nombre}</span>
+                            <span className="block text-xs text-slate-600">
+                              {servicio.descripcion || "Sin descripcion"}
+                            </span>
+                            <span className="mt-1 block text-xs font-semibold text-amber-700">
+                              {servicio.prioridad} | {servicio.tiempo_servicio ?? 0} min
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      disabled={savingHoja || !diagnosticoForm.trim()}
+                      onClick={() => void saveHojaTrabajo()}
+                      className="rounded-lg border border-blue-900 px-6 py-3 text-sm font-bold text-blue-900 hover:bg-blue-50 disabled:opacity-60"
+                    >
+                      {savingHoja ? "Guardando..." : "Guardar Avance"}
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={
+                        completingTicket ||
+                        !diagnosticoForm.trim() ||
+                        !solucionForm.trim() ||
+                        serviciosSeleccionados.length === 0
+                      }
+                      className="rounded-lg bg-emerald-700 px-6 py-3 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-60"
+                    >
+                      {completingTicket ? "Terminando..." : "Marcar Terminado"}
+                    </button>
+                  </div>
+                </section>
+              </form>
+            ) : null}
           </div>
         </div>
       ) : null}

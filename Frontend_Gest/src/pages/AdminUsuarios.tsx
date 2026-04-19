@@ -94,6 +94,19 @@ const headers = () => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
+const getApiErrorMessage = (error: unknown, fallback: string) => {
+  if (axios.isAxiosError(error)) {
+    const apiMessage = error.response?.data?.message;
+    const url = error.config?.url;
+    const suffix = url ? ` (${url})` : "";
+    if (typeof apiMessage === "string" && apiMessage.trim()) return `${apiMessage}${suffix}`;
+    const status = error.response?.status;
+    if (status === 401 || status === 403) return `No autorizado${suffix}`;
+    if (status) return `${fallback}: HTTP ${status}${suffix}`;
+  }
+  return fallback;
+};
+
 export default function AdminUsuarios() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [roles, setRoles] = useState<Rol[]>([]);
@@ -118,13 +131,16 @@ export default function AdminUsuarios() {
         axios.get<Rol[]>(`${API_BASE_URL}/roles`, { headers: headers() }),
         axios.get<Area[]>(`${API_BASE_URL}/areas`, { headers: headers() }),
       ]);
-      setUsuarios(usersRes.data || []);
-      setRoles(rolesRes.data || []);
-      setAreas(areasRes.data || []);
+      setUsuarios(Array.isArray(usersRes.data) ? usersRes.data : []);
+      setRoles(Array.isArray(rolesRes.data) ? rolesRes.data : []);
+      setAreas(Array.isArray(areasRes.data) ? areasRes.data : []);
       setErrorMessage("");
     } catch (error) {
-      console.error(error);
-      setErrorMessage("No se pudo cargar la gestion de usuarios.");
+      console.error("Error cargando gestion de usuarios:", error);
+      setUsuarios([]);
+      setRoles([]);
+      setAreas([]);
+      setErrorMessage(getApiErrorMessage(error, "No se pudo cargar la gestion de usuarios."));
     } finally {
       setLoading(false);
     }

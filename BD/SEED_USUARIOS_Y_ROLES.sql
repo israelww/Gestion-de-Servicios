@@ -1,4 +1,4 @@
-USE ControlTotal
+USE TallerReparYMant
 GO
 
 -- Roles (IDs propuestos). Si ya existen en tu BD, puedes omitir esta sección
@@ -51,3 +51,4 @@ IF NOT EXISTS (SELECT 1 FROM Usuarios WHERE id_usuario = 'USR_USER_00001')
     'ROL_USER'
   );
 
+SELECT * FROM Usuarios

@@ -1,5 +1,3 @@
-
-
 create database ControlTotal
 use ControlTotal
 GO
