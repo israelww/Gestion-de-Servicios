@@ -1,5 +1,10 @@
-create database ControlTotal
-use ControlTotal
+IF DB_ID('ControlTotal') IS NULL
+BEGIN
+    CREATE DATABASE ControlTotal;
+END
+GO
+
+USE ControlTotal;
 GO
 
 create table Roles(

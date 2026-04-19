@@ -55,5 +55,117 @@ BEGIN
 END;
 GO
 
--- Nota: backfill, FK NOT NULL y DROP prioridad suelen hacerse desde la app o scripts dedicados
--- para evitar estados inconsistentes. Ver Backend ensureServiciosCatalogSchema.
+-- Se cambio el id_ci de CHAR a VARCHAR
+-- Alinear id_ci a VARCHAR(25) en la tabla principal y tablas relacionadas.
+-- Corrige bases existentes que quedaron con id_ci CHAR(10), causando error 2628.
+SET XACT_ABORT ON;
+GO
+
+BEGIN TRANSACTION;
+
+DECLARE @sqlIdCi NVARCHAR(MAX) = N'';
+DECLARE @pkElementosCi SYSNAME;
+
+-- 1. Eliminar FKs que dependen de Elementos_Configuracion(id_ci).
+SELECT @sqlIdCi = @sqlIdCi + N'
+ALTER TABLE ' + QUOTENAME(SCHEMA_NAME(parent.schema_id)) + N'.' + QUOTENAME(parent.name) +
+N' DROP CONSTRAINT ' + QUOTENAME(fk.name) + N';'
+FROM sys.foreign_keys fk
+JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+JOIN sys.tables parent ON parent.object_id = fk.parent_object_id
+JOIN sys.columns parent_col
+  ON parent_col.object_id = fkc.parent_object_id
+ AND parent_col.column_id = fkc.parent_column_id
+JOIN sys.columns referenced_col
+  ON referenced_col.object_id = fkc.referenced_object_id
+ AND referenced_col.column_id = fkc.referenced_column_id
+WHERE fk.referenced_object_id = OBJECT_ID('dbo.Elementos_Configuracion')
+  AND referenced_col.name = 'id_ci'
+  AND parent_col.name = 'id_ci';
+
+IF @sqlIdCi <> N'' EXEC sys.sp_executesql @sqlIdCi;
+
+-- 2. Eliminar PK de Elementos_Configuracion para poder alterar id_ci.
+SELECT @pkElementosCi = kc.name
+FROM sys.key_constraints kc
+WHERE kc.parent_object_id = OBJECT_ID('dbo.Elementos_Configuracion')
+  AND kc.type = 'PK';
+
+IF @pkElementosCi IS NOT NULL
+BEGIN
+  SET @sqlIdCi =
+    N'ALTER TABLE dbo.Elementos_Configuracion DROP CONSTRAINT ' +
+    QUOTENAME(@pkElementosCi) + N';';
+  EXEC sys.sp_executesql @sqlIdCi;
+END;
+
+-- 3. Alinear todas las columnas id_ci a VARCHAR(25).
+IF OBJECT_ID('dbo.Elementos_Configuracion', 'U') IS NOT NULL
+BEGIN
+  ALTER TABLE dbo.Elementos_Configuracion ALTER COLUMN id_ci VARCHAR(25) NOT NULL;
+END;
+
+IF OBJECT_ID('dbo.Mantenimientos', 'U') IS NOT NULL
+BEGIN
+  ALTER TABLE dbo.Mantenimientos ALTER COLUMN id_ci VARCHAR(25) NULL;
+END;
+
+IF OBJECT_ID('dbo.Historial_Cambios_CI', 'U') IS NOT NULL
+BEGIN
+  ALTER TABLE dbo.Historial_Cambios_CI ALTER COLUMN id_ci VARCHAR(25) NOT NULL;
+END;
+
+-- 4. Restaurar PK y FKs con nombres estables.
+IF OBJECT_ID('dbo.Elementos_Configuracion', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.key_constraints
+  WHERE parent_object_id = OBJECT_ID('dbo.Elementos_Configuracion')
+    AND type = 'PK'
+)
+BEGIN
+  ALTER TABLE dbo.Elementos_Configuracion
+    ADD CONSTRAINT PK_Elementos_Configuracion PRIMARY KEY (id_ci);
+END;
+
+IF OBJECT_ID('dbo.Mantenimientos', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.foreign_keys
+  WHERE parent_object_id = OBJECT_ID('dbo.Mantenimientos')
+    AND name = 'FK_Mantenimientos_CI'
+)
+BEGIN
+  ALTER TABLE dbo.Mantenimientos WITH CHECK
+    ADD CONSTRAINT FK_Mantenimientos_CI
+    FOREIGN KEY (id_ci) REFERENCES dbo.Elementos_Configuracion(id_ci);
+END;
+
+IF OBJECT_ID('dbo.Historial_Cambios_CI', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.foreign_keys
+  WHERE parent_object_id = OBJECT_ID('dbo.Historial_Cambios_CI')
+    AND name = 'FK_HistorialCI_CI'
+)
+BEGIN
+  ALTER TABLE dbo.Historial_Cambios_CI WITH CHECK
+    ADD CONSTRAINT FK_HistorialCI_CI
+    FOREIGN KEY (id_ci) REFERENCES dbo.Elementos_Configuracion(id_ci);
+END;
+
+COMMIT TRANSACTION;
+GO
+
+SELECT
+  OBJECT_SCHEMA_NAME(c.object_id) AS schema_name,
+  OBJECT_NAME(c.object_id) AS table_name,
+  c.name AS column_name,
+  t.name AS type_name,
+  c.max_length,
+  c.is_nullable
+FROM sys.columns c
+JOIN sys.types t ON t.user_type_id = c.user_type_id
+WHERE c.name = 'id_ci'
+ORDER BY table_name;
+GO

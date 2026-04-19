@@ -13,6 +13,7 @@ const CI_DEFAULT_STATUS = 'Activo'
 const ROLE_ADMIN = 'Administrador'
 const ROLE_TECNICO = 'Tecnico'
 const PRIORIDADES_VALIDAS = ['Baja', 'Media', 'Alta', 'Critica']
+const EXPECTED_DATABASE = 'ControlTotal'
 
 app.use(
   cors({
@@ -26,7 +27,7 @@ const sqlConfig = {
   server: process.env.DB_SERVER,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
+  database: process.env.DB_DATABASE || EXPECTED_DATABASE,
   options: {
     encrypt: process.env.DB_ENCRYPT === 'true',
     trustServerCertificate: process.env.DB_TRUST_SERVER_CERT === 'true',
@@ -34,6 +35,7 @@ const sqlConfig = {
 }
 
 let poolPromise = null
+let activePool = null
 function hasSqlConfig() {
   return (
     typeof sqlConfig.server === 'string' &&
@@ -49,20 +51,69 @@ function hasSqlConfig() {
 
 async function getPool() {
   if (!hasSqlConfig()) return null
+  if (sqlConfig.database !== EXPECTED_DATABASE) {
+    console.error(
+      `Base de datos incorrecta: DB_DATABASE esta configurada como ${sqlConfig.database}; se esperaba ${EXPECTED_DATABASE}`
+    )
+    return null
+  }
   if (!poolPromise) {
     poolPromise = new sql.ConnectionPool(sqlConfig)
       .connect()
       .then((pool) => {
-        console.log('Conectado a SQL Server')
+        activePool = pool
+        console.log(`Conexión exitosa a la base de datos ${sqlConfig.database}`)
         return pool
       })
       .catch((err) => {
-        console.error('Error conectando a SQL Server:', err?.message || err)
+        console.error(
+          `Error conectando a la base de datos ${sqlConfig.database}:`,
+          err?.message || err
+        )
         poolPromise = null
+        activePool = null
         return null
       })
   }
   return await poolPromise
+}
+
+async function resetSqlPool() {
+  const pool = activePool || (poolPromise ? await poolPromise.catch(() => null) : null)
+  if (pool) {
+    await pool.close()
+  }
+  poolPromise = null
+  activePool = null
+}
+
+async function testDatabaseConnection() {
+  try {
+    if (!hasSqlConfig()) {
+      console.error(
+        'Error conectando a la base de datos ControlTotal: faltan DB_SERVER/DB_USER/DB_PASSWORD/DB_DATABASE en .env'
+      )
+      return
+    }
+
+    const pool = await getPool()
+    if (!pool) return
+
+    const result = await pool.request().query('SELECT DB_NAME() AS database_name')
+    const databaseName = result.recordset?.[0]?.database_name
+    if (databaseName !== EXPECTED_DATABASE) {
+      console.error(
+        `Error conectando a la base de datos ControlTotal: la conexión activa apunta a ${databaseName}`
+      )
+      await resetSqlPool()
+      return
+    }
+
+    console.log('Conexión exitosa a la base de datos ControlTotal')
+  } catch (err) {
+    console.error('Error conectando a la base de datos ControlTotal:', err?.message || err)
+    await resetSqlPool()
+  }
 }
 
 function toTrimmedString(value) {
@@ -127,6 +178,28 @@ async function getCiTypeData(request, idTipoCi) {
 
 function badRequest(res, message) {
   return res.status(400).json({ message })
+}
+
+function getServerErrorMessage(err) {
+  return (
+    err?.originalError?.info?.message ||
+    err?.precedingErrors?.[0]?.originalError?.info?.message ||
+    err?.message ||
+    'Error desconocido'
+  )
+}
+
+function getServerErrorDetail(err) {
+  const info = err?.originalError?.info || err?.precedingErrors?.[0]?.originalError?.info || {}
+  return {
+    code: err?.code,
+    number: err?.number || info.number,
+    state: err?.state || info.state,
+    class: err?.class || info.class,
+    serverName: err?.serverName || info.serverName,
+    procName: err?.procName || info.procName,
+    lineNumber: err?.lineNumber || info.lineNumber,
+  }
 }
 
 function getJwtFromHeader(req) {
@@ -1418,6 +1491,18 @@ app.post('/api/ci', async (req, res) => {
     return res.status(500).json({ message: 'Backend sin configuración de BD' })
   }
 
+  const dbResult = await pool.request().query('SELECT DB_NAME() AS database_name')
+  const activeDatabase = dbResult.recordset?.[0]?.database_name
+  if (activeDatabase !== EXPECTED_DATABASE) {
+    await resetSqlPool()
+    return res.status(500).json({
+      message: `La conexión activa apunta a ${activeDatabase}; se esperaba ${EXPECTED_DATABASE}`,
+    })
+  }
+  console.log(
+    `[POST /api/ci] DB=${activeDatabase} id_tipo_ci=${payload.id_tipo_ci} id_marca=${payload.id_marca} id_sublocalizacion=${payload.id_sublocalizacion}`
+  )
+
   const transaction = new sql.Transaction(pool)
   let transactionFinished = false
 
@@ -1432,7 +1517,14 @@ app.post('/api/ci', async (req, res) => {
     }
 
     const prefix = buildCiPrefix(tipo.nombre_tipo)
-    const finalIdCi = payload.id_ci || (await findNextCiId(new sql.Request(transaction), prefix))
+    const finalIdCi = toTrimmedString(
+      payload.id_ci || (await findNextCiId(new sql.Request(transaction), prefix))
+    )
+
+    if (finalIdCi.length > 25) {
+      await transaction.rollback()
+      return badRequest(res, 'El id_ci no puede exceder 25 caracteres')
+    }
 
     if (!finalIdCi.startsWith(`${prefix}-`)) {
       await transaction.rollback()
@@ -1577,7 +1669,10 @@ app.post('/api/ci', async (req, res) => {
     }
 
     console.error('Error en POST /api/ci:', err)
-    return res.status(500).json({ message: 'Error interno del servidor' })
+    return res.status(500).json({
+      message: `Error en POST /api/ci: ${getServerErrorMessage(err)}`,
+      detail: getServerErrorDetail(err),
+    })
   }
 })
 
@@ -2939,4 +3034,5 @@ app.get('/api/me', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en http://localhost:${PORT}`)
+  testDatabaseConnection()
 })

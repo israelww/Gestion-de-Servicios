@@ -1,4 +1,4 @@
-USE TallerReparYMant
+USE ControlTotal
 GO
 
 -- Roles (IDs propuestos). Si ya existen en tu BD, puedes omitir esta sección
