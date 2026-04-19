@@ -1,4 +1,4 @@
-require('dotenv').config()
+﻿require('dotenv').config()
 
 const express = require('express')
 const cors = require('cors')
@@ -67,6 +67,44 @@ async function getPool() {
 
 function toTrimmedString(value) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+const DESKTOP_TIPO_CI_ID = 'T04'
+const ESPECIFICACIONES_HARDWARE_MAX_LEN = 65536
+
+function normalizeEspecificacionesHardwareForDb(idTipoCi, raw) {
+  if (toTrimmedString(idTipoCi) !== DESKTOP_TIPO_CI_ID) {
+    return { ok: true, value: null }
+  }
+  if (raw === undefined || raw === null) {
+    return { ok: true, value: null }
+  }
+  let jsonString
+  if (typeof raw === 'string') {
+    const t = raw.trim()
+    if (!t) return { ok: true, value: null }
+    try {
+      JSON.parse(t)
+      jsonString = t
+    } catch {
+      return { ok: false, error: 'especificaciones_hardware debe ser JSON valido' }
+    }
+  } else if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+    try {
+      jsonString = JSON.stringify(raw)
+    } catch {
+      return { ok: false, error: 'No se pudo serializar especificaciones_hardware' }
+    }
+  } else {
+    return { ok: false, error: 'especificaciones_hardware debe ser un objeto o string JSON' }
+  }
+  if (jsonString.length > ESPECIFICACIONES_HARDWARE_MAX_LEN) {
+    return {
+      ok: false,
+      error: 'especificaciones_hardware excede el tamano maximo permitido',
+    }
+  }
+  return { ok: true, value: jsonString }
 }
 
 function buildCiPrefix(nombreTipo) {
@@ -1324,6 +1362,7 @@ app.get('/api/ci', async (_req, res) => {
         ci.id_marca,
         ci.id_sublocalizacion,
         ci.id_usuario_responsable,
+        ci.especificaciones_hardware,
         tc.nombre_tipo,
         m.nombre_marca,
         s.nombre_sublocalizacion,
@@ -1370,6 +1409,7 @@ app.get('/api/ci/:id_ci/detalle', ...requireAdminOrTecnico, async (req, res) => 
           ci.id_marca,
           ci.id_sublocalizacion,
           ci.id_usuario_responsable,
+          ci.especificaciones_hardware,
           tc.nombre_tipo,
           m.nombre_marca,
           s.nombre_sublocalizacion,
@@ -1411,6 +1451,14 @@ app.post('/api/ci', async (req, res) => {
       res,
       'numero_serie, id_tipo_ci, id_marca e id_sublocalizacion son obligatorios'
     )
+  }
+
+  const hardwareNorm = normalizeEspecificacionesHardwareForDb(
+    payload.id_tipo_ci,
+    req.body?.especificaciones_hardware
+  )
+  if (!hardwareNorm.ok) {
+    return badRequest(res, hardwareNorm.error)
   }
 
   const pool = await getPool()
@@ -1528,6 +1576,7 @@ app.post('/api/ci', async (req, res) => {
         payload.id_usuario_responsable || null
       )
       .input('fecha_ingreso', sql.Date, new Date())
+      .input('especificaciones_hardware', sql.NVarChar(sql.MAX), hardwareNorm.value)
       .query(
         `
         INSERT INTO Elementos_Configuracion (
@@ -1540,7 +1589,8 @@ app.post('/api/ci', async (req, res) => {
           id_marca,
           id_sublocalizacion,
           id_usuario_responsable,
-          fecha_ingreso
+          fecha_ingreso,
+          especificaciones_hardware
         )
         VALUES (
           @id_ci,
@@ -1552,7 +1602,8 @@ app.post('/api/ci', async (req, res) => {
           @id_marca,
           @id_sublocalizacion,
           @id_usuario_responsable,
-          @fecha_ingreso
+          @fecha_ingreso,
+          @especificaciones_hardware
         )
         `
       )
@@ -1603,12 +1654,22 @@ app.put('/api/ci/:id_ci', ...requireAdmin, async (req, res) => {
       .request()
       .input('id_ci', sql.VarChar(25), id_ci)
       .query(`
-        SELECT id_ci
+        SELECT id_ci, id_tipo_ci
         FROM Elementos_Configuracion
         WHERE id_ci = @id_ci
       `)
-    if (!existingResult.recordset?.[0]) {
+    const existingRow = existingResult.recordset?.[0]
+    if (!existingRow) {
       return res.status(404).json({ message: 'El CI no existe' })
+    }
+
+    const idTipoExisting = toTrimmedString(existingRow.id_tipo_ci)
+    const hardwareNorm = normalizeEspecificacionesHardwareForDb(
+      idTipoExisting,
+      req.body?.especificaciones_hardware
+    )
+    if (!hardwareNorm.ok) {
+      return badRequest(res, hardwareNorm.error)
     }
 
     if (payload.id_usuario_responsable) {
@@ -1624,7 +1685,7 @@ app.put('/api/ci/:id_ci', ...requireAdmin, async (req, res) => {
       }
     }
 
-    await pool
+    const reqUpdate = pool
       .request()
       .input('id_ci', sql.VarChar(25), id_ci)
       .input('numero_serie', sql.VarChar(50), payload.numero_serie)
@@ -1632,7 +1693,21 @@ app.put('/api/ci/:id_ci', ...requireAdmin, async (req, res) => {
       .input('modelo', sql.VarChar(100), payload.modelo || null)
       .input('id_marca', sql.Char(10), payload.id_marca)
       .input('id_usuario_responsable', sql.Char(15), payload.id_usuario_responsable || null)
-      .query(`
+
+    if (idTipoExisting === DESKTOP_TIPO_CI_ID) {
+      reqUpdate.input('especificaciones_hardware', sql.NVarChar(sql.MAX), hardwareNorm.value)
+      await reqUpdate.query(`
+        UPDATE Elementos_Configuracion
+        SET numero_serie = @numero_serie,
+            nombre_equipo = @nombre_equipo,
+            modelo = @modelo,
+            id_marca = @id_marca,
+            id_usuario_responsable = @id_usuario_responsable,
+            especificaciones_hardware = @especificaciones_hardware
+        WHERE id_ci = @id_ci
+      `)
+    } else {
+      await reqUpdate.query(`
         UPDATE Elementos_Configuracion
         SET numero_serie = @numero_serie,
             nombre_equipo = @nombre_equipo,
@@ -1641,6 +1716,7 @@ app.put('/api/ci/:id_ci', ...requireAdmin, async (req, res) => {
             id_usuario_responsable = @id_usuario_responsable
         WHERE id_ci = @id_ci
       `)
+    }
 
     return res.status(200).json({ message: 'CI actualizado correctamente' })
   } catch (err) {

@@ -40,6 +40,7 @@ type InventarioCI = {
   nombre_sublocalizacion: string;
   nombre_edificio: string;
   usuario_responsable: string | null;
+  especificaciones_hardware?: string | null;
 };
 type CatalogosCI = {
   tipos_ci: TipoCI[];
@@ -58,6 +59,107 @@ type HistorialCambioCI = {
   detalle_cambio: string;
   fecha_registro: string;
 };
+
+const DESKTOP_TIPO_CI_ID = "T04";
+
+type DesktopHardwareInterno = {
+  procesador: string;
+  placaMadre: string;
+  ram: string;
+  almacenamientoPrincipal: string;
+  almacenamientoSecundario: string;
+  gpu: string;
+  fuentePoder: string;
+  gabinete: string;
+  refrigeracion: string;
+  redCableada: string;
+};
+
+type DesktopHardwareExterno = {
+  monitor: string;
+  monitorSecundario: string;
+  teclado: string;
+  raton: string;
+  webcam: string;
+  altavoces: string;
+  microfono: string;
+  ups: string;
+  otros: string;
+};
+
+type DesktopHardwareSpecs = {
+  interno: DesktopHardwareInterno;
+  externo: DesktopHardwareExterno;
+};
+
+const emptyDesktopHardwareSpecs = (): DesktopHardwareSpecs => ({
+  interno: {
+    procesador: "",
+    placaMadre: "",
+    ram: "",
+    almacenamientoPrincipal: "",
+    almacenamientoSecundario: "",
+    gpu: "",
+    fuentePoder: "",
+    gabinete: "",
+    refrigeracion: "",
+    redCableada: "",
+  },
+  externo: {
+    monitor: "",
+    monitorSecundario: "",
+    teclado: "",
+    raton: "",
+    webcam: "",
+    altavoces: "",
+    microfono: "",
+    ups: "",
+    otros: "",
+  },
+});
+
+const parseDesktopHardwareFromApi = (raw: string | null | undefined): DesktopHardwareSpecs => {
+  const base = emptyDesktopHardwareSpecs();
+  if (!raw || typeof raw !== "string") return base;
+  try {
+    const parsed = JSON.parse(raw) as Partial<DesktopHardwareSpecs>;
+    if (!parsed || typeof parsed !== "object") return base;
+    if (parsed.interno && typeof parsed.interno === "object") {
+      Object.assign(base.interno, parsed.interno);
+    }
+    if (parsed.externo && typeof parsed.externo === "object") {
+      Object.assign(base.externo, parsed.externo);
+    }
+    return base;
+  } catch {
+    return base;
+  }
+};
+
+const DESKTOP_HW_INTERNO_FIELDS: { key: keyof DesktopHardwareInterno; label: string }[] = [
+  { key: "procesador", label: "Procesador (CPU)" },
+  { key: "placaMadre", label: "Placa base" },
+  { key: "ram", label: "Memoria RAM" },
+  { key: "almacenamientoPrincipal", label: "Almacenamiento principal" },
+  { key: "almacenamientoSecundario", label: "Almacenamiento secundario" },
+  { key: "gpu", label: "GPU / Video" },
+  { key: "fuentePoder", label: "Fuente de poder" },
+  { key: "gabinete", label: "Gabinete" },
+  { key: "refrigeracion", label: "Refrigeracion" },
+  { key: "redCableada", label: "Red (cableada / NIC)" },
+];
+
+const DESKTOP_HW_EXTERNO_FIELDS: { key: keyof DesktopHardwareExterno; label: string }[] = [
+  { key: "monitor", label: "Monitor principal" },
+  { key: "monitorSecundario", label: "Monitor secundario" },
+  { key: "teclado", label: "Teclado" },
+  { key: "raton", label: "Raton" },
+  { key: "webcam", label: "Camara / Webcam" },
+  { key: "altavoces", label: "Altavoces" },
+  { key: "microfono", label: "Microfono" },
+  { key: "ups", label: "UPS / No break" },
+  { key: "otros", label: "Otros perifericos" },
+];
 
 const initialBuilding = { id_edificio: "", nombre_edificio: "", descripcion_edificio: "" };
 const initialSub = { id_edificio: "", nombre_sublocalizacion: "", codigo_area: "" };
@@ -204,6 +306,7 @@ export default function AdminActivos() {
   const [subForm, setSubForm] = useState(initialSub);
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
   const [ciForm, setCiForm] = useState(initialCi);
+  const [hardwareSpecs, setHardwareSpecs] = useState<DesktopHardwareSpecs>(() => emptyDesktopHardwareSpecs());
   const [editingCiId, setEditingCiId] = useState<string | null>(null);
   const [edificios, setEdificios] = useState<Edificio[]>([]);
   const [sublocalizaciones, setSublocalizaciones] = useState<Sublocalizacion[]>([]);
@@ -263,6 +366,7 @@ export default function AdminActivos() {
   const generatedCiId = typeCode && locationCode ? `${typeCode}-${locationCode}-${ciCorrelative}` : "";
   const displayCiId = editingCiId ?? generatedCiId;
   const isEditingCi = Boolean(editingCiId);
+  const isDesktopCi = ciForm.id_tipo_ci === DESKTOP_TIPO_CI_ID;
 
   const inventoryRows = inventario.filter((item) => {
     if (filterBuilding && item.nombre_edificio !== filterBuilding) return false;
@@ -455,6 +559,8 @@ export default function AdminActivos() {
       return;
     }
     try {
+      const hardwarePayload =
+        isDesktopCi ? { especificaciones_hardware: hardwareSpecs } : {};
       if (editingCiId) {
         await axios.put(
           `${API_BASE_URL}/ci/${editingCiId}`,
@@ -464,15 +570,21 @@ export default function AdminActivos() {
             modelo: ciForm.modelo,
             id_marca: ciForm.id_marca,
             id_usuario_responsable: ciForm.id_usuario_responsable,
+            ...hardwarePayload,
           },
           { headers: headers() }
         );
         setStatusMessage("Elemento de configuracion actualizado correctamente.");
       } else {
-        await axios.post(`${API_BASE_URL}/ci`, { ...ciForm, id_ci: generatedCiId }, { headers: headers() });
+        await axios.post(
+          `${API_BASE_URL}/ci`,
+          { ...ciForm, id_ci: generatedCiId, ...hardwarePayload },
+          { headers: headers() }
+        );
         setStatusMessage(`Elemento de configuracion registrado correctamente con ID ${generatedCiId}.`);
       }
       setCiForm(initialCi);
+      setHardwareSpecs(emptyDesktopHardwareSpecs());
       setEditingCiId(null);
       await reload();
     } catch (error) {
@@ -517,6 +629,30 @@ export default function AdminActivos() {
     setSelectedCiHistorial(null);
     setHistorialCambios([]);
     setPreventivoDescripcion("");
+  };
+
+  const beginEditCi = (item: InventarioCI) => {
+    const sub = sublocalizaciones.find((s) => s.id_sublocalizacion === item.id_sublocalizacion);
+    const edificioId = sub?.id_edificio || "";
+    setCiForm({
+      numero_serie: item.numero_serie,
+      nombre_equipo: item.nombre_equipo || "",
+      modelo: item.modelo || "",
+      estado: item.estado,
+      id_tipo_ci: item.id_tipo_ci,
+      id_marca: item.id_marca,
+      id_edificio: edificioId,
+      id_sublocalizacion: item.id_sublocalizacion,
+      id_usuario_responsable: item.id_usuario_responsable || "",
+    });
+    if (item.id_tipo_ci === DESKTOP_TIPO_CI_ID) {
+      setHardwareSpecs(parseDesktopHardwareFromApi(item.especificaciones_hardware));
+    } else {
+      setHardwareSpecs(emptyDesktopHardwareSpecs());
+    }
+    setEditingCiId(cleanId(item.id_ci));
+    setStatusMessage("");
+    setErrorMessage("");
   };
 
   const submitTicketPreventivo = async (event: FormEvent<HTMLFormElement>) => {
@@ -724,14 +860,14 @@ export default function AdminActivos() {
 
             {!loading && activeView === "catalogo-ci" ? (
               <div className="space-y-8">
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <section className="mx-auto max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="mb-6">
                     <h2 className="text-2xl font-bold text-[#001f3f]">Catalogo de CIs</h2>
                     <p className="mt-1 text-sm text-slate-600">Patron [TIPO]-[UBICACION]-[CORRELATIVO] con vista previa.</p>
                   </div>
                   <form className="mt-6 space-y-5" onSubmit={submitCi}>
                     <div className="grid gap-5 xl:grid-cols-2">
-                      <label><Label>Tipo de CI</Label><div className="relative"><Wrench className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><select value={ciForm.id_tipo_ci} onChange={(e) => setCiForm((p) => ({ ...p, id_tipo_ci: e.target.value }))} className={`${inputClass(isEditingCi)} pl-12`} disabled={isEditingCi} required><option value="">Selecciona un tipo</option>{catalogos.tipos_ci.map((item) => <option key={item.id_tipo_ci} value={item.id_tipo_ci}>{item.nombre_tipo}</option>)}</select></div></label>
+                      <label><Label>Tipo de CI</Label><div className="relative"><Wrench className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><select value={ciForm.id_tipo_ci} onChange={(e) => { const v = e.target.value; setCiForm((p) => ({ ...p, id_tipo_ci: v })); if (v !== DESKTOP_TIPO_CI_ID) setHardwareSpecs(emptyDesktopHardwareSpecs()); }} className={`${inputClass(isEditingCi)} pl-12`} disabled={isEditingCi} required><option value="">Selecciona un tipo</option>{catalogos.tipos_ci.map((item) => <option key={item.id_tipo_ci} value={item.id_tipo_ci}>{item.nombre_tipo}</option>)}</select></div></label>
                       <label><Label>Edificio</Label><select value={ciForm.id_edificio} onChange={(e) => setCiForm((p) => ({ ...p, id_edificio: e.target.value }))} className={inputClass(isEditingCi)} disabled={isEditingCi} required><option value="">Selecciona un edificio</option>{catalogos.edificios.map((item) => <option key={item.id_edificio} value={item.id_edificio}>{item.nombre_edificio}</option>)}</select></label>
                     </div>
                     <div className="grid gap-5 xl:grid-cols-2">
@@ -754,6 +890,53 @@ export default function AdminActivos() {
                       <label><Label>Usuario responsable</Label><div className="relative"><UserRound className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><select value={ciForm.id_usuario_responsable} onChange={(e) => setCiForm((p) => ({ ...p, id_usuario_responsable: e.target.value }))} className={`${inputClass()} pl-12`}><option value="">Sin asignar</option>{catalogos.usuarios.map((item) => <option key={item.id_usuario} value={item.id_usuario}>{item.nombre_completo}</option>)}</select></div></label>
                       <div />
                     </div>
+                    {isDesktopCi ? (
+                      <div className="space-y-6 rounded-2xl border border-blue-100 bg-blue-50/50 p-5">
+                        <h4 className="text-sm font-bold uppercase tracking-wide text-[#001f3f]">
+                          Especificaciones de hardware (computadora de escritorio)
+                        </h4>
+                        <div>
+                          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Componentes internos</p>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            {DESKTOP_HW_INTERNO_FIELDS.map(({ key, label }) => (
+                              <label key={key} className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                                {label}
+                                <input
+                                  className={`${inputClass()} mt-1`}
+                                  value={hardwareSpecs.interno[key]}
+                                  onChange={(e) =>
+                                    setHardwareSpecs((s) => ({
+                                      ...s,
+                                      interno: { ...s.interno, [key]: e.target.value },
+                                    }))
+                                  }
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Perifericos externos</p>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            {DESKTOP_HW_EXTERNO_FIELDS.map(({ key, label }) => (
+                              <label key={key} className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                                {label}
+                                <input
+                                  className={`${inputClass()} mt-1`}
+                                  value={hardwareSpecs.externo[key]}
+                                  onChange={(e) =>
+                                    setHardwareSpecs((s) => ({
+                                      ...s,
+                                      externo: { ...s.externo, [key]: e.target.value },
+                                    }))
+                                  }
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
                     <Preview text="El ID generado para este activo sera:" value={displayCiId} />
                     <div className="flex flex-wrap gap-3">
                       <button type="submit" disabled={submitting} className="rounded-xl bg-[#001f3f] px-6 py-4 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-70">
@@ -765,6 +948,7 @@ export default function AdminActivos() {
                           className="rounded-xl border border-slate-300 px-6 py-4 text-sm font-semibold text-slate-700 hover:bg-slate-100"
                           onClick={() => {
                             setCiForm(initialCi);
+                            setHardwareSpecs(emptyDesktopHardwareSpecs());
                             setEditingCiId(null);
                             setStatusMessage("");
                             setErrorMessage("");
@@ -827,26 +1011,7 @@ export default function AdminActivos() {
                                     Historial
                                   </button>
                                   <ActionButtons
-                                    onEdit={() => {
-                                      const sub = sublocalizaciones.find(
-                                        (s) => s.id_sublocalizacion === item.id_sublocalizacion
-                                      );
-                                      const edificioId = sub?.id_edificio || "";
-                                      setCiForm({
-                                        numero_serie: item.numero_serie,
-                                        nombre_equipo: item.nombre_equipo || "",
-                                        modelo: item.modelo || "",
-                                        estado: item.estado,
-                                        id_tipo_ci: item.id_tipo_ci,
-                                        id_marca: item.id_marca,
-                                        id_edificio: edificioId,
-                                        id_sublocalizacion: item.id_sublocalizacion,
-                                        id_usuario_responsable: item.id_usuario_responsable || "",
-                                      });
-                                      setEditingCiId(cleanId(item.id_ci));
-                                      setStatusMessage("");
-                                      setErrorMessage("");
-                                    }}
+                                    onEdit={() => beginEditCi(item)}
                                     onDelete={async () => {
                                       if (!window.confirm("Eliminar este CI? Esta accion no se puede deshacer.")) {
                                         return;
@@ -900,26 +1065,7 @@ export default function AdminActivos() {
                               Historial
                             </button>
                             <ActionButtons
-                              onEdit={() => {
-                                const sub = sublocalizaciones.find(
-                                  (s) => s.id_sublocalizacion === item.id_sublocalizacion
-                                );
-                                const edificioId = sub?.id_edificio || "";
-                                setCiForm({
-                                  numero_serie: item.numero_serie,
-                                  nombre_equipo: item.nombre_equipo || "",
-                                  modelo: item.modelo || "",
-                                  estado: item.estado,
-                                  id_tipo_ci: item.id_tipo_ci,
-                                  id_marca: item.id_marca,
-                                  id_edificio: edificioId,
-                                  id_sublocalizacion: item.id_sublocalizacion,
-                                  id_usuario_responsable: item.id_usuario_responsable || "",
-                                });
-                                setEditingCiId(cleanId(item.id_ci));
-                                setStatusMessage("");
-                                setErrorMessage("");
-                              }}
+                              onEdit={() => beginEditCi(item)}
                               onDelete={async () => {
                                 if (!window.confirm("Eliminar este CI? Esta accion no se puede deshacer.")) {
                                   return;
