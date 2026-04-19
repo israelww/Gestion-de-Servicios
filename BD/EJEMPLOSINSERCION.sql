@@ -106,7 +106,8 @@ INSERT INTO Sublocalizaciones (id_sublocalizacion, nombre_sublocalizacion, id_ed
 INSERT INTO Tipo_CI (id_tipo_ci, nombre_tipo) VALUES 
 ('T01', 'Laptop'),
 ('T02', 'Switch'),
-('T03', 'Proyector');
+('T03', 'Proyector'),
+('T04', N'Computadora de escritorio');
 
 -- Areas y servicios (catalogo)
 INSERT INTO Areas (id_area, nombre_area) VALUES 

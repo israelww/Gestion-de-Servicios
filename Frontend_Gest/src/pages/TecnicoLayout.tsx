@@ -29,7 +29,7 @@ export default function TecnicoLayout() {
           transform: "scale(1.05)",
         }}
       />
-      <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.45)" }} />
+      <div style={{ position: "absolute", inset: 0, background: "rgba(15, 42, 32, 0.45)" }} />
 
       <div className="relative z-10 min-h-screen">
         <Sidebar

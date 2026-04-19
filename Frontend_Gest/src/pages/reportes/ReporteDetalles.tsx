@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import { getToken } from "../../auth/storage";
 import { Star } from "lucide-react";
+import { ticketEstadoBadgeClasses } from "../../utils/ticketEstadoBadge";
 
 const API_BASE_URL = "http://localhost:4000/api";
 
@@ -71,22 +72,6 @@ const formatDate = (value: string) => {
     minute: "2-digit",
   }).format(date);
 };
-
-function getEstadoClasses(estado: string) {
-  if (estado.toLowerCase() === "cerrado") {
-    return "bg-emerald-100 text-emerald-800";
-  }
-  if (estado.toLowerCase() === "terminado") {
-    return "bg-teal-100 text-teal-800";
-  }
-  if (estado.toLowerCase() === "liberado") {
-    return "bg-slate-900 text-white";
-  }
-  if (estado.toLowerCase() === "en proceso") {
-    return "bg-orange-100 text-orange-800";
-  }
-  return "bg-blue-100 text-blue-800";
-}
 
 const prioridadMinutos: Record<string, number> = {
   Critica: 60,
@@ -268,7 +253,7 @@ export default function ReporteDetalles() {
                 <dt className="text-xs font-semibold uppercase text-slate-500">Estado</dt>
                 <dd className="mt-1">
                   <span
-                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getEstadoClasses(
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${ticketEstadoBadgeClasses(
                       reporte.estado
                     )}`}
                   >

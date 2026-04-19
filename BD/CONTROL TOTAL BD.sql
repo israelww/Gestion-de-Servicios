@@ -81,8 +81,10 @@ CREATE TABLE Elementos_Configuracion (
     id_marca CHAR(10) REFERENCES marcas(id_marca),
     id_sublocalizacion CHAR(10) REFERENCES Sublocalizaciones(id_sublocalizacion),
     id_usuario_responsable CHAR(15) REFERENCES Usuarios(id_usuario),
-    fecha_ingreso DATE DEFAULT CURRENT_DATE
+    fecha_ingreso DATE DEFAULT CURRENT_DATE,
+    especificaciones_hardware NVARCHAR(MAX) NULL
 );
+ALTER TABLE Elementos_Configuracion ADD especificaciones_hardware NVARCHAR(MAX) NULL;
 
 -- 5. NUEVA: Tabla de Mantenimientos (Lo que te faltaba)
 CREATE TABLE Mantenimientos (

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { getToken } from "../auth/storage";
+import { ticketEstadoBadgeClasses } from "../utils/ticketEstadoBadge";
 
 const API_BASE_URL = "http://localhost:4000/api";
 
@@ -145,7 +146,11 @@ export default function AdminInbox() {
                 </p>
                 <p className="mt-1 text-xs text-slate-500">Reporta: {item.usuario_reporta || item.id_usuario_reporta || "N/D"}</p>
               </div>
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">Pendiente</span>
+              <span
+                className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${ticketEstadoBadgeClasses(item.estado)}`}
+              >
+                {item.estado}
+              </span>
             </div>
 
             <p className="mt-4 whitespace-pre-line text-sm text-slate-700">{item.descripcion_falla}</p>
