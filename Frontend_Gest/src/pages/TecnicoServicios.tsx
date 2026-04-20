@@ -61,6 +61,7 @@ interface ServicioCatalogo {
   nombre: string;
   descripcion: string | null;
   tiempo_servicio: number | null;
+  tiempo_estimado_minutos?: number | null;
   prioridad: string;
 }
 
@@ -124,6 +125,7 @@ export default function TecnicoServicios() {
   const [tecnicoId, setTecnicoId] = useState("");
   const [servicioACompletar, setServicioACompletar] = useState<ServicioTecnico | null>(null);
   const [hojaTrabajo, setHojaTrabajo] = useState<HojaTrabajoResponse | null>(null);
+  const [catalogoServicios, setCatalogoServicios] = useState<ServicioCatalogo[]>([]);
   const [hojaLoading, setHojaLoading] = useState(false);
   const [servicioSearch, setServicioSearch] = useState("");
   const [diagnosticoForm, setDiagnosticoForm] = useState("");
@@ -137,8 +139,10 @@ export default function TecnicoServicios() {
   const serviciosPendientes = servicios.filter((item) => !estadosFinales.includes(item.estado));
   const serviciosCerrados = servicios.filter((item) => estadosFinales.includes(item.estado));
   const selectedSet = new Set(serviciosSeleccionados);
+  const catalogoHoja =
+    catalogoServicios.length > 0 ? catalogoServicios : hojaTrabajo?.catalogo_servicios || [];
   const serviciosFiltrados =
-    hojaTrabajo?.catalogo_servicios.filter((servicio) => {
+    catalogoHoja.filter((servicio) => {
       const term = servicioSearch.trim().toLowerCase();
       if (!term) return true;
       return `${servicio.nombre} ${servicio.descripcion || ""} ${servicio.prioridad}`
@@ -146,9 +150,11 @@ export default function TecnicoServicios() {
         .includes(term);
     }) || [];
   const totalMinutosSeleccionados =
-    hojaTrabajo?.catalogo_servicios.reduce(
+    catalogoHoja.reduce(
       (total, servicio) =>
-        selectedSet.has(servicio.id_servicio) ? total + (Number(servicio.tiempo_servicio) || 0) : total,
+        selectedSet.has(servicio.id_servicio)
+          ? total + (Number(servicio.tiempo_estimado_minutos ?? servicio.tiempo_servicio) || 0)
+          : total,
       0
     ) || 0;
 
@@ -259,6 +265,7 @@ export default function TecnicoServicios() {
   const openCompletarModal = async (item: ServicioTecnico) => {
     setServicioACompletar(item);
     setHojaTrabajo(null);
+    setCatalogoServicios([]);
     setServicioSearch("");
     setDiagnosticoForm(item.diagnostico_inicial || "");
     setServiciosSeleccionados([]);
@@ -267,15 +274,19 @@ export default function TecnicoServicios() {
     setErrorMessage("");
     setHojaLoading(true);
     try {
-      const response = await axios.get<HojaTrabajoResponse>(
-        `${API_BASE_URL}/tecnico/servicios/${item.id_reporte}/hoja-trabajo`,
-        { headers: headers() }
-      );
-      setHojaTrabajo(response.data);
-      setDiagnosticoForm(response.data.ticket.diagnostico_inicial || "");
-      setSolucionForm(response.data.ticket.descripcion_solucion || "");
+      const [hojaResponse, catalogoResponse] = await Promise.all([
+        axios.get<HojaTrabajoResponse>(
+          `${API_BASE_URL}/tecnico/servicios/${item.id_reporte}/hoja-trabajo`,
+          { headers: headers() }
+        ),
+        axios.get<ServicioCatalogo[]>(`${API_BASE_URL}/servicios`, { headers: headers() }),
+      ]);
+      setHojaTrabajo(hojaResponse.data);
+      setCatalogoServicios(catalogoResponse.data || hojaResponse.data.catalogo_servicios || []);
+      setDiagnosticoForm(hojaResponse.data.ticket.diagnostico_inicial || "");
+      setSolucionForm(hojaResponse.data.ticket.descripcion_solucion || "");
       setServiciosSeleccionados(
-        (response.data.servicios_seleccionados || []).map((servicio) => servicio.id_servicio)
+        (hojaResponse.data.servicios_seleccionados || []).map((servicio) => servicio.id_servicio)
       );
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error, "No se pudo cargar la hoja de trabajo."));
@@ -287,6 +298,7 @@ export default function TecnicoServicios() {
   const closeCompletarModal = () => {
     setServicioACompletar(null);
     setHojaTrabajo(null);
+    setCatalogoServicios([]);
     setServicioSearch("");
     setDiagnosticoForm("");
     setServiciosSeleccionados([]);
@@ -683,7 +695,7 @@ export default function TecnicoServicios() {
             ) : null}
 
             {!hojaLoading ? (
-              <form className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]" onSubmit={submitCompletarTicket}>
+              <form className="grid gap-5 lg:grid-cols-2" onSubmit={submitCompletarTicket}>
                 <section className="space-y-4">
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs font-semibold uppercase text-slate-500">Falla reportada</p>
@@ -728,14 +740,19 @@ export default function TecnicoServicios() {
                   <div className="rounded-lg border border-slate-200 bg-white p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <h4 className="text-base font-bold text-slate-900">Catalogo de Servicios</h4>
+                        <h4 className="text-base font-bold text-slate-900">Acciones a Realizar</h4>
                         <p className="text-sm text-slate-600">
                           Selecciona las acciones realizadas para sumar el tiempo estimado.
                         </p>
                       </div>
-                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
-                        {totalMinutosSeleccionados} min
-                      </span>
+                      <div className="rounded-lg bg-emerald-50 px-3 py-2 text-right">
+                        <span className="block text-[11px] font-semibold uppercase text-emerald-700">
+                          Duracion Estimada del Trabajo
+                        </span>
+                        <span className="block text-sm font-bold text-emerald-800">
+                          {totalMinutosSeleccionados} min
+                        </span>
+                      </div>
                     </div>
 
                     <input
@@ -752,7 +769,10 @@ export default function TecnicoServicios() {
                         </div>
                       ) : null}
 
-                      {serviciosFiltrados.map((servicio) => (
+                      {serviciosFiltrados.map((servicio) => {
+                        const tiempoEstimado =
+                          servicio.tiempo_estimado_minutos ?? servicio.tiempo_servicio ?? 0;
+                        return (
                         <label
                           key={servicio.id_servicio}
                           className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm hover:bg-slate-100"
@@ -769,11 +789,12 @@ export default function TecnicoServicios() {
                               {servicio.descripcion || "Sin descripcion"}
                             </span>
                             <span className="mt-1 block text-xs font-semibold text-amber-700">
-                              {servicio.prioridad} | {servicio.tiempo_servicio ?? 0} min
+                              {servicio.prioridad} | Tiempo estimado: {tiempoEstimado} min
                             </span>
                           </span>
                         </label>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 

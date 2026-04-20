@@ -94,6 +94,7 @@ CREATE TABLE Mantenimientos (
     tipo_mantenimiento VARCHAR(50) DEFAULT 'Correctivo', -- Preventivo, Correctivo
     descripcion_tarea TEXT,
     descripcion_solucion VARCHAR(1000),
+    diagnostico_inicial VARCHAR(1000),
     calificacion_servicio TINYINT,
     comentario_valoracion VARCHAR(500),
     fecha_valoracion DATETIME,
@@ -104,8 +105,28 @@ CREATE TABLE Mantenimientos (
     tecnico_externo VARCHAR(100), -- Por si no es un usuario del sistema
     costo DECIMAL(10, 2),
     id_usuario_reporta CHAR(15) REFERENCES Usuarios(id_usuario),
+    fecha_asignacion DATETIME,
+    fecha_terminado DATETIME,
     fecha_cierre DATETIME
 );
+
+CREATE TABLE Mantenimiento_Servicios (
+    id_mantenimiento CHAR(10) NOT NULL REFERENCES Mantenimientos(id_mantenimiento),
+    id_servicio CHAR(10) NOT NULL REFERENCES Servicios(id_servicio),
+    fecha_registro DATETIME NOT NULL DEFAULT GETDATE(),
+    PRIMARY KEY (id_mantenimiento, id_servicio)
+);
+
+GO
+
+CREATE VIEW Catalogo_Servicios AS
+SELECT
+    id_servicio,
+    COALESCE(descripcion, nombre) AS descripcion,
+    tiempo_servicio AS tiempo_estimado_minutos
+FROM Servicios;
+
+GO
 
 -- 6. Historial de cambios en CIs
 CREATE TABLE Historial_Cambios_CI (

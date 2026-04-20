@@ -55,6 +55,50 @@ BEGIN
 END;
 GO
 
+IF COL_LENGTH('Mantenimientos', 'diagnostico_inicial') IS NULL
+BEGIN
+  ALTER TABLE Mantenimientos ADD diagnostico_inicial VARCHAR(1000) NULL;
+END;
+GO
+
+IF COL_LENGTH('Mantenimientos', 'fecha_asignacion') IS NULL
+BEGIN
+  ALTER TABLE Mantenimientos ADD fecha_asignacion DATETIME NULL;
+END;
+GO
+
+IF COL_LENGTH('Mantenimientos', 'fecha_terminado') IS NULL
+BEGIN
+  ALTER TABLE Mantenimientos ADD fecha_terminado DATETIME NULL;
+END;
+GO
+
+IF OBJECT_ID('Mantenimiento_Servicios', 'U') IS NULL
+BEGIN
+  CREATE TABLE Mantenimiento_Servicios (
+    id_mantenimiento CHAR(10) NOT NULL,
+    id_servicio CHAR(10) NOT NULL,
+    fecha_registro DATETIME NOT NULL CONSTRAINT DF_MantenimientoServicios_fecha DEFAULT GETDATE(),
+    CONSTRAINT PK_Mantenimiento_Servicios PRIMARY KEY (id_mantenimiento, id_servicio),
+    CONSTRAINT FK_MantenimientoServicios_Mantenimiento FOREIGN KEY (id_mantenimiento) REFERENCES Mantenimientos(id_mantenimiento),
+    CONSTRAINT FK_MantenimientoServicios_Servicio FOREIGN KEY (id_servicio) REFERENCES Servicios(id_servicio)
+  );
+END;
+GO
+
+IF OBJECT_ID('Catalogo_Servicios') IS NULL
+BEGIN
+  EXEC(N'
+    CREATE VIEW Catalogo_Servicios AS
+    SELECT
+      id_servicio,
+      COALESCE(descripcion, nombre) AS descripcion,
+      tiempo_servicio AS tiempo_estimado_minutos
+    FROM Servicios
+  ');
+END;
+GO
+
 -- Se cambio el id_ci de CHAR a VARCHAR
 -- Alinear id_ci a VARCHAR(25) en la tabla principal y tablas relacionadas.
 -- Corrige bases existentes que quedaron con id_ci CHAR(10), causando error 2628.
