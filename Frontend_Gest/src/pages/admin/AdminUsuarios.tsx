@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
+﻿import { useEffect, useState, type FormEvent } from "react";
 import axios from "axios";
-import { getToken } from "../auth/storage";
+import { getToken } from "../../auth/storage";
 
 const API_BASE_URL = "http://localhost:4000/api";
 const NOMBRE_ROL_TECNICO = "Tecnico";

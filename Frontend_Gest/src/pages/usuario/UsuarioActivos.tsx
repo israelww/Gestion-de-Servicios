@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+﻿import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import axios from "axios";
 import {
@@ -11,7 +11,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useLocation } from "react-router-dom";
-import { getToken } from "../auth/storage";
+import { getToken } from "../../auth/storage";
 import { usuarioViewFromPath } from "./usuarioNavigation";
 
 const API_BASE_URL = "http://localhost:4000/api";

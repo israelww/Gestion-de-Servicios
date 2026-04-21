@@ -3,8 +3,8 @@ import type { FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import axios from 'axios';
-import { setAuth, type UserRole } from '../auth/storage';
-import '../App.css';
+import { setAuth, type UserRole } from '../../auth/storage';
+import '../../App.css';
 
 interface LoginFormData {
   username: string;

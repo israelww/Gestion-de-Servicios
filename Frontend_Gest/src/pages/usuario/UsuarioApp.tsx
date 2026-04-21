@@ -1,7 +1,7 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
-import NuevoReporte from './reportes/NuevoReporte';
-import ReporteDetalles from './reportes/ReporteDetalles';
-import UserDashboard from './dashboard/UserDashboard';
+﻿import { Navigate, Route, Routes } from 'react-router-dom';
+import NuevoReporte from '../reportes/NuevoReporte';
+import ReporteDetalles from '../reportes/ReporteDetalles';
+import UserDashboard from '../dashboard/UserDashboard';
 import UsuarioLayout from './UsuarioLayout';
 
 export default function UsuarioApp() {

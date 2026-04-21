@@ -1,5 +1,5 @@
-import { FilePlus, Home } from "lucide-react";
-import type { SidebarNavGroup } from "../components/layout/Sidebar";
+﻿import { FilePlus, Home } from "lucide-react";
+import type { SidebarNavGroup } from "../../components/layout/Sidebar";
 
 export type UsuarioView =
   | "dashboard"

@@ -1,5 +1,5 @@
-import { Boxes, Building2, ClipboardList, ListChecks, UsersRound } from "lucide-react";
-import type { SidebarNavGroup } from "../components/layout/Sidebar";
+﻿import { Boxes, Building2, ClipboardList, ListChecks, UsersRound } from "lucide-react";
+import type { SidebarNavGroup } from "../../components/layout/Sidebar";
 
 export type AdminView =
   | "bandeja-entrada"

@@ -1,5 +1,5 @@
-  import { Outlet, useLocation, useNavigate } from "react-router-dom";
-  import Sidebar from "../components/layout/Sidebar";
+﻿  import { Outlet, useLocation, useNavigate } from "react-router-dom";
+  import Sidebar from "../../components/layout/Sidebar";
   import { usuarioPathForView, usuarioSidebarGroups, usuarioViewFromPath, type UsuarioView } from "./usuarioNavigation";
 
   export default function UsuarioLayout() {

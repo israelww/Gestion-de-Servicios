@@ -1,23 +1,23 @@
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import Sidebar from "../components/layout/Sidebar";
+﻿import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import Sidebar from "../../components/layout/Sidebar";
 import {
-  adminPathForView,
-  adminSidebarGroups,
-  adminViewFromPath,
-  type AdminView,
-} from "./adminNavigation";
+  tecnicoPathForView,
+  tecnicoSidebarGroups,
+  tecnicoViewFromPath,
+  type TecnicoView,
+} from "./tecnicoNavigation";
 
-export default function AdminLayout() {
+export default function TecnicoLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const activeView = adminViewFromPath(location.pathname);
+  const activeView = tecnicoViewFromPath(location.pathname);
 
   const onNavigate = (view: string) => {
-    navigate(adminPathForView(view as AdminView));
+    navigate(tecnicoPathForView(view as TecnicoView));
   };
 
   return (
-    <div className="relative min-h-screen bg-slate-900 text-slate-100 overflow-hidden">
+    <div className="relative min-h-screen overflow-hidden bg-slate-900 text-slate-100">
       <div
         style={{
           position: "absolute",
@@ -29,14 +29,14 @@ export default function AdminLayout() {
           transform: "scale(1.05)",
         }}
       />
-      <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.45)" }} />
+      <div style={{ position: "absolute", inset: 0, background: "rgba(15, 42, 32, 0.45)" }} />
 
       <div className="relative z-10 min-h-screen">
         <Sidebar
           activeView={activeView}
           onNavigate={onNavigate}
-          groups={adminSidebarGroups}
-          headingLines={["Panel", "Administrador"]}
+          groups={tecnicoSidebarGroups}
+          headingLines={["Panel", "Tecnico"]}
         />
         <main className="min-h-screen pl-[250px]">
           <div className="px-12 py-8">

@@ -1,4 +1,4 @@
-export default function AdminDashboard() {
+﻿export default function AdminDashboard() {
   return (
     <div className="relative min-h-screen bg-slate-900 text-slate-100" style={{ overflow: "hidden" }}>
       <div

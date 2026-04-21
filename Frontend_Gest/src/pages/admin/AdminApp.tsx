@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+﻿import { Navigate, Route, Routes } from "react-router-dom";
 import AdminInbox from "./AdminInbox";
 import AdminActivos from "./AdminActivos";
 import AdminLayout from "./AdminLayout";

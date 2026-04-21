@@ -1,10 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import RequireAuth from '../auth/RequireAuth';
 import RequireRole from '../auth/RequireRole';
-import AdminApp from '../pages/AdminApp';
-import LoginPage from '../pages/LoginPage';
-import TecnicoApp from '../pages/TecnicoApp';
-import UsuarioApp from '../pages/UsuarioApp';
+import AdminApp from '../pages/admin/AdminApp';
+import LoginPage from '../pages/auth/LoginPage';
+import TecnicoApp from '../pages/tecnico/TecnicoApp';
+import UsuarioApp from '../pages/usuario/UsuarioApp';
 
 export default function AppRouter() {
   return (

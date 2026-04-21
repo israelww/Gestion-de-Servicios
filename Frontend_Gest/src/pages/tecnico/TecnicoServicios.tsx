@@ -1,8 +1,8 @@
-import { useEffect, useState, type FormEvent } from "react";
+﻿import { useEffect, useState, type FormEvent } from "react";
 import axios from "axios";
 import { ClipboardList } from "lucide-react";
-import { getToken } from "../auth/storage";
-import { ticketEstadoBadgeClasses } from "../utils/ticketEstadoBadge";
+import { getToken } from "../../auth/storage";
+import { ticketEstadoBadgeClasses } from "../../utils/ticketEstadoBadge";
 
 const API_BASE_URL = "http://localhost:4000/api";
 

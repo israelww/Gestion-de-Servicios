@@ -1,5 +1,5 @@
-import { ClipboardCheck } from "lucide-react";
-import type { SidebarNavGroup } from "../components/layout/Sidebar";
+﻿import { ClipboardCheck } from "lucide-react";
+import type { SidebarNavGroup } from "../../components/layout/Sidebar";
 
 export type TecnicoView = "mis-servicios";
 
