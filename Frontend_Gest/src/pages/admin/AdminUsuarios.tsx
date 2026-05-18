@@ -122,6 +122,7 @@ export default function AdminUsuarios() {
   const [showNuevaArea, setShowNuevaArea] = useState(false);
   const [nuevaAreaNombre, setNuevaAreaNombre] = useState("");
   const [savingArea, setSavingArea] = useState(false);
+  const [usuarioSeleccionado, setUsuarioSeleccionado] = useState<Usuario | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -187,6 +188,15 @@ export default function AdminUsuarios() {
   const setDiaHorario = (key: DiaKey, patch: Partial<SlotDia>) => {
     setHorario((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
   };
+
+  const usuariosPorRol = usuarios.reduce<Record<string, Usuario[]>>((acc, usuario) => {
+    const rol = (usuario.nombre_rol || "Sin rol").trim() || "Sin rol";
+    if (!acc[rol]) acc[rol] = [];
+    acc[rol].push(usuario);
+    return acc;
+  }, {});
+
+  const rolesOrdenados = Object.keys(usuariosPorRol).sort((a, b) => a.localeCompare(b, "es"));
 
   const buildHorarioPayload = (): Record<DiaKey, SlotDia> => {
     const out = {} as Record<DiaKey, SlotDia>;
@@ -277,6 +287,19 @@ export default function AdminUsuarios() {
     } catch (error) {
       console.error(error);
       setErrorMessage("No se pudo eliminar el usuario.");
+    }
+  };
+
+  const detalleHorario = (usuario: Usuario): string => {
+    if (!usuario.tecnico_horario) return "No disponible";
+    try {
+      const h = mergeHorarioFromServer(usuario.tecnico_horario);
+      const activos = DIAS.filter(({ key }) => h[key].activo).map(
+        ({ label, key }) => `${label}: ${h[key].inicio} - ${h[key].fin}`
+      );
+      return activos.length ? activos.join(" | ") : "Sin dias activos";
+    } catch {
+      return "No disponible";
     }
   };
 
@@ -502,72 +525,113 @@ export default function AdminUsuarios() {
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="text-lg font-semibold text-slate-900">Usuarios registrados</h3>
 
+        {usuarioSeleccionado ? (
+          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-sm font-semibold uppercase tracking-wide text-[#001f3f]">Informacion completa</h4>
+              <button
+                type="button"
+                onClick={() => setUsuarioSeleccionado(null)}
+                className="rounded-lg border border-blue-300 bg-white px-3 py-1 text-xs font-semibold text-[#001f3f] hover:bg-blue-100"
+              >
+                Cerrar
+              </button>
+            </div>
+            <div className="mt-3 grid gap-2 text-sm text-slate-800 md:grid-cols-2">
+              <p><span className="font-semibold">ID Usuario:</span> {usuarioSeleccionado.id_usuario}</p>
+              <p><span className="font-semibold">Nombre:</span> {usuarioSeleccionado.nombre_completo}</p>
+              <p><span className="font-semibold">Correo:</span> {usuarioSeleccionado.correo}</p>
+              <p><span className="font-semibold">Rol:</span> {usuarioSeleccionado.nombre_rol}</p>
+              <p><span className="font-semibold">ID Tecnico:</span> {usuarioSeleccionado.id_tecnico || "No aplica"}</p>
+              <p><span className="font-semibold">Area Tecnica:</span> {usuarioSeleccionado.tecnico_id_area || "No aplica"}</p>
+              <p className="md:col-span-2">
+                <span className="font-semibold">Horario:</span> {detalleHorario(usuarioSeleccionado)}
+              </p>
+            </div>
+          </div>
+        ) : null}
+
         {loading ? (
           <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-600">
             Cargando usuarios...
           </div>
         ) : null}
 
-        {!loading ? (
-          <div className="mt-4 w-full max-w-full overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="bg-slate-100 text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">ID</th>
-                  <th className="px-4 py-3">Nombre</th>
-                  <th className="px-4 py-3">Correo</th>
-                  <th className="px-4 py-3">Rol</th>
-                  <th className="px-4 py-3 text-left">Accion</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 bg-white">
-                {!usuarios.length ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-500">
-                      No hay usuarios registrados.
-                    </td>
-                  </tr>
-                ) : null}
-                {usuarios.map((usuario) => (
-                  <tr key={usuario.id_usuario}>
-                    <td className="px-4 py-3 font-medium">{usuario.id_usuario}</td>
-                    <td className="px-4 py-3">{usuario.nombre_completo}</td>
-                    <td className="px-4 py-3">{usuario.correo}</td>
-                    <td className="px-4 py-3">{usuario.nombre_rol}</td>
-                    <td className="px-4 py-3">
-                      <div className="inline-flex gap-2">
-                        <button
-                          type="button"
-                          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
-                          onClick={() => {
-                            setEditingId(usuario.id_usuario);
-                            setForm({
-                              nombre_completo: usuario.nombre_completo,
-                              correo: usuario.correo,
-                              id_rol: usuario.id_rol,
-                              password: "",
-                            });
-                            setTecnicoAreaId(usuario.tecnico_id_area || "");
-                            setHorario(mergeHorarioFromServer(usuario.tecnico_horario));
-                            setStatusMessage("");
-                            setErrorMessage("");
-                          }}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
-                          onClick={() => void handleDelete(usuario.id_usuario)}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {!loading && !usuarios.length ? (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+            No hay usuarios registrados.
+          </div>
+        ) : null}
+
+        {!loading && usuarios.length ? (
+          <div className="mt-4 space-y-5">
+            {rolesOrdenados.map((rol) => (
+              <div key={rol} className="overflow-x-auto rounded-xl border border-slate-200">
+                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{rol}</h4>
+                </div>
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead className="bg-slate-100 text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3">ID</th>
+                      <th className="px-4 py-3">Nombre</th>
+                      <th className="px-4 py-3">Correo</th>
+                      <th className="px-4 py-3 text-left">Accion</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 bg-white">
+                    {usuariosPorRol[rol].map((usuario) => (
+                      <tr key={usuario.id_usuario}>
+                        <td className="px-4 py-3 font-medium">{usuario.id_usuario}</td>
+                        <td className="px-4 py-3">{usuario.nombre_completo}</td>
+                        <td className="px-4 py-3">{usuario.correo}</td>
+                        <td className="px-4 py-3">
+                          <div className="inline-flex gap-2">
+                            <button
+                              type="button"
+                              className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                              onClick={() =>
+                                setUsuarioSeleccionado((prev) =>
+                                  prev?.id_usuario === usuario.id_usuario ? null : usuario
+                                )
+                              }
+                            >
+                              Ver
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+                              onClick={() => {
+                                setEditingId(usuario.id_usuario);
+                                setForm({
+                                  nombre_completo: usuario.nombre_completo,
+                                  correo: usuario.correo,
+                                  id_rol: usuario.id_rol,
+                                  password: "",
+                                });
+                                setTecnicoAreaId(usuario.tecnico_id_area || "");
+                                setHorario(mergeHorarioFromServer(usuario.tecnico_horario));
+                                setStatusMessage("");
+                                setErrorMessage("");
+                              }}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                              onClick={() => void handleDelete(usuario.id_usuario)}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
           </div>
         ) : null}
       </section>
