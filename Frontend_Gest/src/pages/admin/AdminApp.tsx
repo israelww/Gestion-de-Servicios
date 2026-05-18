@@ -4,6 +4,8 @@ import AdminActivos from "./AdminActivos";
 import AdminLayout from "./AdminLayout";
 import AdminUsuarios from "./AdminUsuarios";
 import AdminCatalogoServicios from "./AdminCatalogoServicios";
+import AdminTickets from "./AdminTickets";
+import AdminTicketDetalle from "./AdminTicketDetalle";
 
 export default function AdminApp() {
   return (
@@ -15,6 +17,8 @@ export default function AdminApp() {
         <Route path="catalogo-ci" element={<AdminActivos />} />
         <Route path="catalogo-servicios" element={<AdminCatalogoServicios />} />
         <Route path="gestion-usuarios" element={<AdminUsuarios />} />
+        <Route path="tickets" element={<AdminTickets />} />
+        <Route path="tickets/:id" element={<AdminTicketDetalle />} />
         <Route path="*" element={<Navigate to="bandeja-entrada" replace />} />
       </Route>
     </Routes>

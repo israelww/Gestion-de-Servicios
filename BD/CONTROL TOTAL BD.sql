@@ -34,7 +34,7 @@ CREATE TABLE Tipo_CI (
     nombre_tipo VARCHAR(100) NOT NULL -- Ej: Laptop, Proyector
 );
 
--- Catálogo de áreas y servicios (tickets)
+-- Catálogo de áreas profesional
 CREATE TABLE Areas (
     id_area CHAR(10) PRIMARY KEY,
     nombre_area VARCHAR(100) NOT NULL
