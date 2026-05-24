@@ -86,7 +86,7 @@ router.get('/ci/:id_ci/detalle', ...requireAdminOrTecnico, async (req, res) => {
 
     const result = await pool
       .request()
-      .input('id_ci', sql.VarChar(25), id_ci)
+      .input('id_ci', sql.VarChar(50), id_ci)
       .query(`
         SELECT
           ci.id_ci, ci.numero_serie, ci.nombre_equipo, ci.modelo, ci.estado,
@@ -156,7 +156,7 @@ router.post('/ci', async (req, res) => {
     const prefix    = buildCiPrefix(tipo.nombre_tipo)
     const finalIdCi = toTrimmedString(payload.id_ci || (await findNextCiId(new sql.Request(transaction), prefix)))
 
-    if (finalIdCi.length > 25) { await transaction.rollback(); return badRequest(res, 'El id_ci no puede exceder 25 caracteres') }
+    if (finalIdCi.length > 50) { await transaction.rollback(); return badRequest(res, 'El id_ci no puede exceder 50 caracteres') }
     if (!finalIdCi.startsWith(`${prefix}-`)) { await transaction.rollback(); return badRequest(res, `El id_ci debe iniciar con el prefijo ${prefix}- según el tipo seleccionado`) }
 
     const duplicatedCi = await existsById(new sql.Request(transaction), 'Elementos_Configuracion', 'id_ci', 'id_ci', finalIdCi)
@@ -179,7 +179,7 @@ router.post('/ci', async (req, res) => {
     }
 
     await new sql.Request(transaction)
-      .input('id_ci',                  sql.VarChar(25),      finalIdCi)
+      .input('id_ci',                  sql.VarChar(50),      finalIdCi)
       .input('numero_serie',           sql.VarChar(50),      payload.numero_serie)
       .input('nombre_equipo',          sql.VarChar(100),     payload.nombre_equipo || null)
       .input('modelo',                 sql.VarChar(100),     payload.modelo || null)
@@ -237,7 +237,7 @@ router.put('/ci/:id_ci', ...requireAdmin, async (req, res) => {
 
     const existingResult = await pool
       .request()
-      .input('id_ci', sql.VarChar(25), id_ci)
+      .input('id_ci', sql.VarChar(50), id_ci)
       .query(`SELECT id_ci, id_tipo_ci FROM Elementos_Configuracion WHERE id_ci = @id_ci`)
     const existingRow = existingResult.recordset?.[0]
     if (!existingRow) return res.status(404).json({ message: 'El CI no existe' })
@@ -252,7 +252,7 @@ router.put('/ci/:id_ci', ...requireAdmin, async (req, res) => {
     }
 
     const reqUpdate = pool.request()
-      .input('id_ci',                  sql.VarChar(25),  id_ci)
+      .input('id_ci',                  sql.VarChar(50),  id_ci)
       .input('numero_serie',           sql.VarChar(50),  payload.numero_serie)
       .input('nombre_equipo',          sql.VarChar(100), payload.nombre_equipo || null)
       .input('modelo',                 sql.VarChar(100), payload.modelo || null)
@@ -295,7 +295,7 @@ router.delete('/ci/:id_ci', ...requireAdmin, async (req, res) => {
 
     const deleteResult = await pool
       .request()
-      .input('id_ci', sql.VarChar(25), id_ci)
+      .input('id_ci', sql.VarChar(50), id_ci)
       .query(`DELETE FROM Elementos_Configuracion WHERE id_ci = @id_ci`)
 
     if (!deleteResult.rowsAffected?.[0]) return res.status(404).json({ message: 'El CI no existe' })
@@ -325,7 +325,7 @@ router.get('/ci/:id_ci/historial-cambios', ...requireAdminOrTecnico, async (req,
 
     const result = await pool
       .request()
-      .input('id_ci', sql.VarChar(25), id_ci)
+      .input('id_ci', sql.VarChar(50), id_ci)
       .query(`
         SELECT
           id_historial, id_ci, id_mantenimiento, id_solicitud, numero_rfc,
@@ -376,7 +376,7 @@ router.post('/ci/:id_ci/historial-cambios', requireAuth, async (req, res) => {
     const mantenimientoResult = await pool
       .request()
       .input('id_mantenimiento',   sql.Char(10),   payload.id_mantenimiento)
-      .input('id_ci',              sql.VarChar(25), id_ci)
+      .input('id_ci',              sql.VarChar(50), id_ci)
       .input('id_tecnico_asignado', sql.Char(15),   req.user?.sub)
       .query(`
         SELECT id_mantenimiento, tipo_mantenimiento
@@ -397,7 +397,7 @@ router.post('/ci/:id_ci/historial-cambios', requireAuth, async (req, res) => {
 
     await pool
       .request()
-      .input('id_ci',               sql.VarChar(25),  id_ci)
+      .input('id_ci',               sql.VarChar(50),  id_ci)
       .input('id_mantenimiento',    sql.Char(10),     payload.id_mantenimiento)
       .input('fecha_cambio',        sql.DateTime,     parsedDate)
       .input('numero_transaccion',  sql.VarChar(40),  numeroTransaccion)

@@ -7,6 +7,8 @@ let tecnicoTableReady    = false
 let workflowSchemaReady  = false
 let ciHistorySchemaReady = false
 let inventarioSchemaReady = false
+let ciProblemsSchemaReady = false
+let itilProblemsSchemaReady = false
 
 // ─── ensureServiciosCatalogSchema ─────────────────────────────────────────────
 
@@ -354,7 +356,7 @@ async function ensureCiHistoryTable(pool) {
     BEGIN
       CREATE TABLE Historial_Cambios_CI (
         id_historial INT IDENTITY(1,1) PRIMARY KEY,
-        id_ci VARCHAR(25) NOT NULL,
+        id_ci VARCHAR(50) NOT NULL,
         id_mantenimiento CHAR(10) NULL,
         id_solicitud CHAR(12) NULL,
         numero_rfc VARCHAR(25) NULL,
@@ -396,6 +398,147 @@ async function ensureCiHistoryTable(pool) {
   ciHistorySchemaReady = true
 }
 
+// ─── ensureGestionProblemasCiTable ───────────────────────────────────────────
+
+async function ensureGestionProblemasCiTable(pool) {
+  if (ciProblemsSchemaReady) return
+
+  await pool.request().query(`
+    IF OBJECT_ID('Gestion_Problemas_CI', 'U') IS NULL
+    BEGIN
+      CREATE TABLE Gestion_Problemas_CI (
+        id_problema INT IDENTITY(1,1) NOT NULL,
+        id_ci VARCHAR(50) NOT NULL,
+        id_mantenimiento CHAR(10) NULL,
+        fecha_problema DATETIME NOT NULL CONSTRAINT DF_GestionProblemasCI_fecha DEFAULT GETDATE(),
+        numero_transaccion VARCHAR(40) NULL,
+        origen_transaccion VARCHAR(40) NULL,
+        tecnico VARCHAR(120) NOT NULL,
+        error_conocido VARCHAR(500) NOT NULL,
+        solucion_raiz_o_workaround VARCHAR(MAX) NOT NULL,
+        fecha_registro DATETIME NOT NULL CONSTRAINT DF_GestionProblemasCI_registro DEFAULT GETDATE(),
+        CONSTRAINT PK_Gestion_Problemas_CI PRIMARY KEY (id_problema)
+      );
+    END;
+
+    IF COL_LENGTH('Gestion_Problemas_CI', 'id_ci') IS NOT NULL
+    BEGIN
+      DECLARE @ciLen INT;
+      SELECT @ciLen = c.max_length
+      FROM sys.columns c
+      WHERE c.object_id = OBJECT_ID('Gestion_Problemas_CI')
+        AND c.name = 'id_ci';
+
+      IF @ciLen < 50
+        ALTER TABLE Gestion_Problemas_CI ALTER COLUMN id_ci VARCHAR(50) NOT NULL;
+    END;
+
+    IF COL_LENGTH('Gestion_Problemas_CI', 'id_mantenimiento') IS NULL
+      ALTER TABLE Gestion_Problemas_CI ADD id_mantenimiento CHAR(10) NULL;
+
+    IF COL_LENGTH('Gestion_Problemas_CI', 'numero_transaccion') IS NULL
+      ALTER TABLE Gestion_Problemas_CI ADD numero_transaccion VARCHAR(40) NULL;
+
+    IF COL_LENGTH('Gestion_Problemas_CI', 'origen_transaccion') IS NULL
+      ALTER TABLE Gestion_Problemas_CI ADD origen_transaccion VARCHAR(40) NULL;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_GestionProblemasCI_Mantenimiento'
+    )
+    AND OBJECT_ID('Mantenimientos', 'U') IS NOT NULL
+    BEGIN
+      ALTER TABLE Gestion_Problemas_CI
+      ADD CONSTRAINT FK_GestionProblemasCI_Mantenimiento
+      FOREIGN KEY (id_mantenimiento) REFERENCES Mantenimientos(id_mantenimiento);
+    END;
+  `)
+
+  await pool.request().query(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_GestionProblemasCI_CI'
+    )
+    AND OBJECT_ID('Gestion_Problemas_CI', 'U') IS NOT NULL
+    AND OBJECT_ID('Elementos_Configuracion', 'U') IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM sys.columns child
+      JOIN sys.columns parent ON parent.object_id = OBJECT_ID('Elementos_Configuracion')
+        AND parent.name = 'id_ci'
+      WHERE child.object_id = OBJECT_ID('Gestion_Problemas_CI')
+        AND child.name = 'id_ci'
+        AND child.system_type_id = parent.system_type_id
+        AND child.max_length = parent.max_length
+    )
+    BEGIN
+      ALTER TABLE Gestion_Problemas_CI
+      ADD CONSTRAINT FK_GestionProblemasCI_CI
+      FOREIGN KEY (id_ci) REFERENCES Elementos_Configuracion(id_ci);
+    END;
+  `)
+
+  ciProblemsSchemaReady = true
+}
+
+// ─── ensureItilProblemsSchema ────────────────────────────────────────────────
+
+async function ensureItilProblemsSchema(pool) {
+  if (itilProblemsSchemaReady) return
+
+  await pool.request().query(`
+    IF OBJECT_ID('Solicitudes_Investigacion', 'U') IS NULL
+    BEGIN
+      CREATE TABLE Solicitudes_Investigacion (
+        id_solicitud CHAR(10) NOT NULL,
+        titulo VARCHAR(150) NOT NULL,
+        descripcion_problematica VARCHAR(MAX) NOT NULL,
+        id_tipo_ci CHAR(10) NOT NULL,
+        id_administrador CHAR(15) NOT NULL,
+        id_tecnico_especialista CHAR(15) NOT NULL,
+        fecha_creacion DATETIME NOT NULL CONSTRAINT DF_SolicitudesInvestigacion_fecha DEFAULT GETDATE(),
+        estado VARCHAR(20) NOT NULL CONSTRAINT DF_SolicitudesInvestigacion_estado DEFAULT 'En Investigacion',
+        CONSTRAINT PK_Solicitudes_Investigacion PRIMARY KEY (id_solicitud),
+        CONSTRAINT CK_SolicitudesInvestigacion_estado CHECK (estado IN ('En Investigacion', 'Resuelto')),
+        CONSTRAINT FK_SolicitudesInvestigacion_TipoCI FOREIGN KEY (id_tipo_ci) REFERENCES Tipo_CI(id_tipo_ci),
+        CONSTRAINT FK_SolicitudesInvestigacion_Admin FOREIGN KEY (id_administrador) REFERENCES Usuarios(id_usuario),
+        CONSTRAINT FK_SolicitudesInvestigacion_Tecnico FOREIGN KEY (id_tecnico_especialista) REFERENCES Usuarios(id_usuario)
+      );
+    END;
+
+    IF OBJECT_ID('Tabla_Conocimiento', 'U') IS NULL
+    BEGIN
+      CREATE TABLE Tabla_Conocimiento (
+        id_conocimiento INT IDENTITY(1,1) NOT NULL,
+        id_solicitud CHAR(10) NOT NULL,
+        id_tipo_ci CHAR(10) NOT NULL,
+        error_conocido VARCHAR(255) NOT NULL,
+        causa_raiz VARCHAR(MAX) NOT NULL,
+        solucion VARCHAR(MAX) NOT NULL,
+        fecha_registro DATETIME NOT NULL CONSTRAINT DF_TablaConocimiento_fecha DEFAULT GETDATE(),
+        CONSTRAINT PK_Tabla_Conocimiento PRIMARY KEY (id_conocimiento),
+        CONSTRAINT FK_TablaConocimiento_Solicitud FOREIGN KEY (id_solicitud) REFERENCES Solicitudes_Investigacion(id_solicitud),
+        CONSTRAINT FK_TablaConocimiento_TipoCI FOREIGN KEY (id_tipo_ci) REFERENCES Tipo_CI(id_tipo_ci)
+      );
+    END;
+
+    IF COL_LENGTH('Mantenimientos', 'id_solicitud_investigacion') IS NULL
+    BEGIN
+      ALTER TABLE Mantenimientos ADD id_solicitud_investigacion CHAR(10) NULL;
+    END;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_Mantenimientos_SolicitudInvestigacion'
+    )
+    AND OBJECT_ID('Solicitudes_Investigacion', 'U') IS NOT NULL
+    BEGIN
+      ALTER TABLE Mantenimientos
+      ADD CONSTRAINT FK_Mantenimientos_SolicitudInvestigacion
+      FOREIGN KEY (id_solicitud_investigacion) REFERENCES Solicitudes_Investigacion(id_solicitud);
+    END;
+  `)
+
+  itilProblemsSchemaReady = true
+}
+
 // ─── ensureInventarioSchema ───────────────────────────────────────────────────
 
 async function ensureInventarioSchema(pool) {
@@ -414,13 +557,13 @@ async function ensureInventarioSchema(pool) {
         precio_unitario DECIMAL(10, 2) NOT NULL,
         unidad VARCHAR(20) NULL,
         activo BIT NOT NULL CONSTRAINT DF_Componentes_activo DEFAULT 1,
-        id_ci VARCHAR(25) NULL,
+        id_ci VARCHAR(50) NULL,
         CONSTRAINT PK_Componentes_Inventario PRIMARY KEY (id_componente)
       );
     END;
 
     IF COL_LENGTH('Componentes_Inventario', 'id_ci') IS NULL
-      ALTER TABLE Componentes_Inventario ADD id_ci VARCHAR(25) NULL;
+      ALTER TABLE Componentes_Inventario ADD id_ci VARCHAR(50) NULL;
 
     IF NOT EXISTS (
       SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_Componentes_CI'
@@ -437,7 +580,7 @@ async function ensureInventarioSchema(pool) {
       CREATE TABLE Solicitud_Cambio_Componente (
         id_solicitud CHAR(12) NOT NULL,
         numero_rfc VARCHAR(25) NOT NULL,
-        id_ci VARCHAR(25) NOT NULL,
+        id_ci VARCHAR(50) NOT NULL,
         id_mantenimiento CHAR(10) NOT NULL,
         id_tecnico CHAR(15) NOT NULL,
         detalle_cambio VARCHAR(500) NOT NULL,
@@ -490,5 +633,7 @@ module.exports = {
   ensureTecnicoTable,
   ensureWorkflowColumns,
   ensureCiHistoryTable,
+  ensureGestionProblemasCiTable,
+  ensureItilProblemsSchema,
   ensureInventarioSchema,
 }

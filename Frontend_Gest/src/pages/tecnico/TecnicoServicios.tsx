@@ -76,6 +76,17 @@ type SolicitudCambioRow = {
   detalle_cambio: string;
 };
 
+type ConocimientoKedb = {
+  id_conocimiento: number;
+  id_solicitud: string;
+  id_tipo_ci: string;
+  nombre_tipo: string;
+  error_conocido: string;
+  causa_raiz: string;
+  solucion: string;
+  fecha_registro: string;
+};
+
 type LineaSolicitud = { id_componente: string; cantidad: number };
 
 const MONTO_LIMITE_INSTITUCION = 1000;
@@ -163,6 +174,8 @@ export default function TecnicoServicios() {
   const [completingTicket, setCompletingTicket] = useState(false);
   const [detalleCi, setDetalleCi] = useState<CiDetalle | null>(null);
   const [detalleCiLoading, setDetalleCiLoading] = useState(false);
+  const [sugerenciasKedb, setSugerenciasKedb] = useState<ConocimientoKedb[]>([]);
+  const [sugerenciasLoading, setSugerenciasLoading] = useState(false);
   const estadosFinales = ["Terminado", "Cerrado", "Liberado"];
   const serviciosPendientes = servicios.filter((item) => !estadosFinales.includes(item.estado));
   const serviciosCerrados = servicios.filter((item) => estadosFinales.includes(item.estado));
@@ -363,16 +376,19 @@ export default function TecnicoServicios() {
     setDiagnosticoForm(item.diagnostico_inicial || "");
     setServiciosSeleccionados([]);
     setSolucionForm(item.descripcion_solucion || "");
+    setSugerenciasKedb([]);
     setStatusMessage("");
     setErrorMessage("");
     setHojaLoading(true);
+    setSugerenciasLoading(true);
     try {
-      const [hojaResponse, catalogoResponse] = await Promise.all([
+      const [hojaResponse, catalogoResponse, ciResponse] = await Promise.all([
         axios.get<HojaTrabajoResponse>(
           `${API_BASE_URL}/tecnico/servicios/${item.id_reporte}/hoja-trabajo`,
           { headers: headers() }
         ),
         axios.get<ServicioCatalogo[]>(`${API_BASE_URL}/servicios`, { headers: headers() }),
+        axios.get<CiDetalle>(`${API_BASE_URL}/ci/${item.id_ci}/detalle`, { headers: headers() }),
       ]);
       setHojaTrabajo(hojaResponse.data);
       setCatalogoServicios(catalogoResponse.data || hojaResponse.data.catalogo_servicios || []);
@@ -381,10 +397,21 @@ export default function TecnicoServicios() {
       setServiciosSeleccionados(
         (hojaResponse.data.servicios_seleccionados || []).map((servicio) => servicio.id_servicio)
       );
+      try {
+        const comparacion = await axios.post<ConocimientoKedb[]>(
+          `${API_BASE_URL}/incidentes/comparar`,
+          { id_tipo_ci: ciResponse.data.id_tipo_ci },
+          { headers: headers() }
+        );
+        setSugerenciasKedb(comparacion.data || []);
+      } catch {
+        setSugerenciasKedb([]);
+      }
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error, "No se pudo cargar la hoja de trabajo."));
     } finally {
       setHojaLoading(false);
+      setSugerenciasLoading(false);
     }
   };
 
@@ -396,6 +423,8 @@ export default function TecnicoServicios() {
     setDiagnosticoForm("");
     setServiciosSeleccionados([]);
     setSolucionForm("");
+    setSugerenciasKedb([]);
+    setSugerenciasLoading(false);
   };
 
   const toggleServicioSeleccionado = (idServicio: string) => {
@@ -835,6 +864,34 @@ export default function TecnicoServicios() {
 
             {!hojaLoading ? (
               <form className="grid gap-5 lg:grid-cols-2" onSubmit={submitCompletarTicket}>
+                <section className="lg:col-span-2">
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="text-sm font-bold uppercase text-amber-900">
+                        Sugerencias de Base de Conocimiento
+                      </h4>
+                      {sugerenciasLoading ? <span className="text-xs text-amber-800">Consultando...</span> : null}
+                    </div>
+                    {!sugerenciasKedb.length && !sugerenciasLoading ? (
+                      <p className="mt-2 text-sm text-amber-900">
+                        No hay soluciones documentadas para este tipo de equipo.
+                      </p>
+                    ) : null}
+                    {sugerenciasKedb.length ? (
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {sugerenciasKedb.map((item) => (
+                          <article key={item.id_conocimiento} className="rounded-lg border border-amber-200 bg-white p-3 text-sm">
+                            <p className="font-semibold text-slate-900">{item.error_conocido}</p>
+                            <p className="mt-2 text-xs font-semibold uppercase text-slate-500">Causa raiz</p>
+                            <p className="mt-1 whitespace-pre-line text-slate-700">{item.causa_raiz}</p>
+                            <p className="mt-2 text-xs font-semibold uppercase text-slate-500">Solucion documentada</p>
+                            <p className="mt-1 whitespace-pre-line text-slate-700">{item.solucion}</p>
+                          </article>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
                 <section className="space-y-4">
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs font-semibold uppercase text-slate-500">Falla reportada</p>

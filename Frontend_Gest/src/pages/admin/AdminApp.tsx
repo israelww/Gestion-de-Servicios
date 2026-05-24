@@ -6,6 +6,7 @@ import AdminUsuarios from "./AdminUsuarios";
 import AdminCatalogoServicios from "./AdminCatalogoServicios";
 import AdminInventarioComponentes from "./AdminInventarioComponentes";
 import AdminSolicitudesCambio from "./AdminSolicitudesCambio";
+import AdminProblemas from "./AdminProblemas";
 import AdminTickets from "./AdminTickets";
 import AdminTicketDetalle from "./AdminTicketDetalle";
 
@@ -20,6 +21,7 @@ export default function AdminApp() {
         <Route path="catalogo-servicios" element={<AdminCatalogoServicios />} />
         <Route path="inventario-componentes" element={<AdminInventarioComponentes />} />
         <Route path="solicitudes-cambio" element={<AdminSolicitudesCambio />} />
+        <Route path="gestion-problemas" element={<AdminProblemas />} />
         <Route path="gestion-usuarios" element={<AdminUsuarios />} />
         <Route path="tickets" element={<AdminTickets />} />
         <Route path="tickets/:id" element={<AdminTicketDetalle />} />

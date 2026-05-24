@@ -351,7 +351,7 @@ router.post('/admin/ci/:id_ci/ticket-preventivo', ...requireAdmin, async (req, r
 
     await new sql.Request(transaction)
       .input('id_mantenimiento',   sql.Char(10),         id_mantenimiento)
-      .input('id_ci',              sql.VarChar(25),      id_ci)
+      .input('id_ci',              sql.VarChar(50),      id_ci)
       .input('id_servicio',        sql.Char(10),         id_servicio)
       .input('fecha_mantenimiento', sql.DateTime,         new Date())
       .input('tipo_mantenimiento', sql.VarChar(50),      'Preventivo')
@@ -369,7 +369,7 @@ router.post('/admin/ci/:id_ci/ticket-preventivo', ...requireAdmin, async (req, r
       `)
 
     await new sql.Request(transaction)
-      .input('id_ci',               sql.VarChar(25),  id_ci)
+      .input('id_ci',               sql.VarChar(50),  id_ci)
       .input('id_mantenimiento',    sql.Char(10),     id_mantenimiento)
       .input('fecha_cambio',        sql.DateTime,     new Date())
       .input('numero_transaccion',  sql.VarChar(40),  `PRE-${id_mantenimiento}`)

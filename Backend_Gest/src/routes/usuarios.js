@@ -16,9 +16,11 @@ router.get('/usuarios/tecnicos', ...requireAdmin, async (_req, res) => {
     if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
 
     const result = await pool.request().query(`
-      SELECT u.id_usuario, u.nombre_completo
+      SELECT u.id_usuario, u.nombre_completo, t.id_area, a.nombre_area
       FROM Usuarios u
       JOIN Roles r ON r.id_rol = u.id_rol
+      LEFT JOIN Tecnico t ON t.id_usuario = u.id_usuario
+      LEFT JOIN Areas a ON a.id_area = t.id_area
       WHERE r.nombre_rol = '${ROLE_TECNICO}'
       ORDER BY u.nombre_completo
     `)

@@ -1,4 +1,4 @@
-﻿import { Boxes, Building2, ClipboardList, FileCheck, ListChecks, Package, UsersRound } from "lucide-react";
+import { Boxes, Building2, ClipboardList, FileCheck, ListChecks, Package, SearchCheck, UsersRound } from "lucide-react";
 import type { SidebarNavGroup } from "../../components/layout/Sidebar";
 
 export type AdminView =
@@ -8,6 +8,7 @@ export type AdminView =
   | "catalogo-servicios"
   | "inventario-componentes"
   | "solicitudes-cambio"
+  | "gestion-problemas"
   | "gestion-usuarios";
 
 export const adminSidebarGroups: SidebarNavGroup[] = [
@@ -20,6 +21,7 @@ export const adminSidebarGroups: SidebarNavGroup[] = [
       { id: "catalogo-servicios", label: "Catalogo de servicios", icon: ListChecks },
       { id: "inventario-componentes", label: "Inventario componentes", icon: Package },
       { id: "solicitudes-cambio", label: "Solicitudes RFC", icon: FileCheck },
+      { id: "gestion-problemas", label: "Gestion de Problemas", icon: SearchCheck },
       { id: "gestion-usuarios", label: "Gestion de Usuarios", icon: UsersRound },
     ],
   },
@@ -39,6 +41,8 @@ export function adminPathForView(view: AdminView) {
       return "/admin/inventario-componentes";
     case "solicitudes-cambio":
       return "/admin/solicitudes-cambio";
+    case "gestion-problemas":
+      return "/admin/gestion-problemas";
     case "gestion-usuarios":
       return "/admin/gestion-usuarios";
     default:
@@ -53,6 +57,7 @@ export function adminViewFromPath(pathname: string): AdminView {
   if (pathname.endsWith("/catalogo-servicios")) return "catalogo-servicios";
   if (pathname.endsWith("/inventario-componentes")) return "inventario-componentes";
   if (pathname.endsWith("/solicitudes-cambio")) return "solicitudes-cambio";
+  if (pathname.endsWith("/gestion-problemas")) return "gestion-problemas";
   if (pathname.endsWith("/gestion-usuarios")) return "gestion-usuarios";
   return "bandeja-entrada";
 }

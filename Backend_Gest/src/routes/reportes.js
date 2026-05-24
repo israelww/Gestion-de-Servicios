@@ -84,7 +84,7 @@ router.post('/reportes', ...requireAnyAuth, async (req, res) => {
     const request = new sql.Request(transaction)
 
     const ciCheck = await request
-      .input('id_ci',              sql.VarChar(25), payload.id_ci)
+      .input('id_ci',              sql.VarChar(50), payload.id_ci)
       .input('id_sublocalizacion', sql.Char(10),    payload.id_sublocalizacion)
       .input('id_edificio',        sql.Char(10),    payload.id_edificio)
       .query(`
@@ -114,7 +114,7 @@ router.post('/reportes', ...requireAnyAuth, async (req, res) => {
 
     await new sql.Request(transaction)
       .input('id_mantenimiento',   sql.Char(10),         id_mantenimiento)
-      .input('id_ci',              sql.VarChar(25),      payload.id_ci)
+      .input('id_ci',              sql.VarChar(50),      payload.id_ci)
       .input('id_area',            sql.Char(10),         id_area)
       .input('fecha_mantenimiento', sql.DateTime,         new Date())
       .input('tipo_mantenimiento', sql.VarChar(50),      'Correctivo')
@@ -344,7 +344,7 @@ router.put('/reportes/:id_reporte/valoracion', ...requireAnyAuth, async (req, re
     if (ciResult.recordset?.[0]?.id_ci) {
       await pool
         .request()
-        .input('id_ci', sql.VarChar(25), ciResult.recordset[0].id_ci)
+        .input('id_ci', sql.VarChar(50), ciResult.recordset[0].id_ci)
         .query(`UPDATE Elementos_Configuracion SET estado = 'Activo' WHERE id_ci = @id_ci`)
     }
 

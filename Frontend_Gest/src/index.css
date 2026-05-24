@@ -11,6 +11,12 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -18,4 +24,59 @@ body {
   overflow-x: hidden;
   background-color: #0f172a;
   color: #ffffff;
+}
+
+.global-sidebar {
+  overflow: visible;
+}
+
+.sidebar-shell {
+  overflow: visible;
+}
+
+.sidebar-header,
+.sidebar-footer {
+  flex-shrink: 0;
+}
+
+.sidebar-header {
+  padding-top: 48px;
+}
+
+.sidebar-links {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(226, 232, 240, 0.45) transparent;
+}
+
+.sidebar-links::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-links::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-links::-webkit-scrollbar-thumb {
+  background-color: rgba(226, 232, 240, 0.35);
+  border-radius: 999px;
+}
+
+@media (max-height: 720px) {
+  .sidebar-shell {
+    padding-top: 1.25rem;
+    padding-bottom: 1.25rem;
+  }
+
+  .sidebar-header {
+    padding-top: 1.5rem;
+    padding-bottom: 1rem;
+  }
+
+  .sidebar-nav {
+    padding-top: 1.5rem;
+  }
 }

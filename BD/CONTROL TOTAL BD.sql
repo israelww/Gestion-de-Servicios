@@ -72,7 +72,7 @@ CREATE TABLE Tecnico (
 
 -- 4. Elementos de Configuración (El núcleo)
 CREATE TABLE Elementos_Configuracion (
-    id_ci VARCHAR(25) PRIMARY KEY,
+    id_ci VARCHAR(50) PRIMARY KEY,
     numero_serie VARCHAR(50) UNIQUE NOT NULL,
     nombre_equipo VARCHAR(100),
     modelo VARCHAR(100),
@@ -89,7 +89,7 @@ ALTER TABLE Elementos_Configuracion ADD especificaciones_hardware NVARCHAR(MAX) 
 -- 5. NUEVA: Tabla de Mantenimientos (Lo que te faltaba)
 CREATE TABLE Mantenimientos (
     id_mantenimiento char(10) PRIMARY KEY,
-    id_ci VARCHAR(25) REFERENCES Elementos_Configuracion(id_ci),
+    id_ci VARCHAR(50) REFERENCES Elementos_Configuracion(id_ci),
     fecha_mantenimiento DATETIME DEFAULT GETDATE(),
     tipo_mantenimiento VARCHAR(50) DEFAULT 'Correctivo', -- Preventivo, Correctivo
     descripcion_tarea TEXT,
@@ -107,7 +107,8 @@ CREATE TABLE Mantenimientos (
     id_usuario_reporta CHAR(15) REFERENCES Usuarios(id_usuario),
     fecha_asignacion DATETIME,
     fecha_terminado DATETIME,
-    fecha_cierre DATETIME
+    fecha_cierre DATETIME,
+    id_solicitud_investigacion CHAR(10) NULL
 );
 
 CREATE TABLE Mantenimiento_Servicios (
@@ -131,7 +132,7 @@ GO
 -- 6. Historial de cambios en CIs
 CREATE TABLE Historial_Cambios_CI (
     id_historial INT IDENTITY(1,1) PRIMARY KEY,
-    id_ci VARCHAR(25) NOT NULL REFERENCES Elementos_Configuracion(id_ci),
+    id_ci VARCHAR(50) NOT NULL REFERENCES Elementos_Configuracion(id_ci),
     id_mantenimiento CHAR(10) REFERENCES Mantenimientos(id_mantenimiento),
     id_solicitud CHAR(12) NULL,
     numero_rfc VARCHAR(25) NULL,
@@ -152,7 +153,7 @@ CREATE TABLE Componentes_Inventario (
     precio_unitario DECIMAL(10, 2) NOT NULL,
     unidad VARCHAR(20) NULL,
     activo BIT NOT NULL CONSTRAINT DF_Componentes_activo DEFAULT 1,
-    id_ci VARCHAR(25) NULL,
+    id_ci VARCHAR(50) NULL,
     CONSTRAINT PK_Componentes_Inventario PRIMARY KEY (id_componente),
     CONSTRAINT FK_Componentes_CI FOREIGN KEY (id_ci) REFERENCES Elementos_Configuracion(id_ci)
 );
@@ -161,7 +162,7 @@ CREATE TABLE Componentes_Inventario (
 CREATE TABLE Solicitud_Cambio_Componente (
     id_solicitud CHAR(12) NOT NULL,
     numero_rfc VARCHAR(25) NOT NULL,
-    id_ci VARCHAR(25) NOT NULL,
+    id_ci VARCHAR(50) NOT NULL,
     id_mantenimiento CHAR(10) NOT NULL,
     id_tecnico CHAR(15) NOT NULL,
     detalle_cambio VARCHAR(500) NOT NULL,
@@ -180,6 +181,34 @@ CREATE TABLE Solicitud_Cambio_Componente (
     CONSTRAINT FK_SolicitudCambio_Tecnico FOREIGN KEY (id_tecnico) REFERENCES Usuarios(id_usuario),
     CONSTRAINT FK_SolicitudCambio_Historial FOREIGN KEY (id_historial) REFERENCES Historial_Cambios_CI(id_historial)
 );
+
+-- 9. Gestion de problemas ITIL: solicitudes de investigacion de causa raiz
+CREATE TABLE Solicitudes_Investigacion (
+    id_solicitud CHAR(10) PRIMARY KEY,
+    titulo VARCHAR(150) NOT NULL,
+    descripcion_problematica TEXT NOT NULL,
+    id_tipo_ci CHAR(10) NOT NULL REFERENCES Tipo_CI(id_tipo_ci),
+    id_administrador CHAR(15) NOT NULL REFERENCES Usuarios(id_usuario),
+    id_tecnico_especialista CHAR(15) NOT NULL REFERENCES Usuarios(id_usuario),
+    fecha_creacion DATETIME NOT NULL DEFAULT GETDATE(),
+    estado VARCHAR(20) NOT NULL DEFAULT 'En Investigacion',
+    CONSTRAINT CK_SolicitudesInvestigacion_estado CHECK (estado IN ('En Investigacion', 'Resuelto'))
+);
+
+-- 10. KEDB: Known Error Database
+CREATE TABLE Tabla_Conocimiento (
+    id_conocimiento INT IDENTITY(1,1) PRIMARY KEY,
+    id_solicitud CHAR(10) NOT NULL REFERENCES Solicitudes_Investigacion(id_solicitud),
+    id_tipo_ci CHAR(10) NOT NULL REFERENCES Tipo_CI(id_tipo_ci),
+    error_conocido VARCHAR(255) NOT NULL,
+    causa_raiz TEXT NOT NULL,
+    solucion TEXT NOT NULL,
+    fecha_registro DATETIME NOT NULL DEFAULT GETDATE()
+);
+
+ALTER TABLE Mantenimientos
+ADD CONSTRAINT FK_Mantenimientos_SolicitudInvestigacion
+FOREIGN KEY (id_solicitud_investigacion) REFERENCES Solicitudes_Investigacion(id_solicitud);
 
 CREATE TABLE Solicitud_Cambio_Detalle (
     id_detalle INT IDENTITY(1,1) PRIMARY KEY,

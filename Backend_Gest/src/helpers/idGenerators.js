@@ -167,6 +167,18 @@ async function findNextNumeroRfc(request) {
   return `RFC-${String(max + 1).padStart(5, '0')}`
 }
 
+async function findNextInvestigacionId(request) {
+  const result = await request.query(
+    `SELECT id_solicitud FROM Solicitudes_Investigacion WHERE id_solicitud LIKE 'PI%'`
+  )
+  const max = (result.recordset || []).reduce((m, row) => {
+    const raw = String(row.id_solicitud || '').replace(/^PI/i, '')
+    const n = Number.parseInt(raw, 10)
+    return Number.isNaN(n) ? m : Math.max(m, n)
+  }, 0)
+  return `PI${String(max + 1).padStart(8, '0')}`
+}
+
 module.exports = {
   findNextMaintenanceId,
   findNextAreaId,
@@ -176,6 +188,7 @@ module.exports = {
   findNextComponenteId,
   findNextSolicitudId,
   findNextNumeroRfc,
+  findNextInvestigacionId,
   fourCharRoleCode,
   getRolNombre,
   horarioTecnicoValido,

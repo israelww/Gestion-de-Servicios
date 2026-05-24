@@ -112,7 +112,7 @@ router.get('/admin/inventario/componentes', ...requireAdmin, async (req, res) =>
     const request = pool.request()
     let where = ''
     if (filterCi) {
-      request.input('id_ci', sql.VarChar(25), filterCi)
+      request.input('id_ci', sql.VarChar(50), filterCi)
       where = 'WHERE c.id_ci = @id_ci'
     }
 
@@ -163,7 +163,7 @@ router.post('/admin/inventario/componentes', ...requireAdmin, async (req, res) =
       .input('cantidad_stock', sql.Int, cantidad_stock)
       .input('precio_unitario', sql.Decimal(10, 2), precio_unitario)
       .input('unidad', sql.VarChar(20), unidad)
-      .input('id_ci', sql.VarChar(25), idCiValid)
+      .input('id_ci', sql.VarChar(50), idCiValid)
       .query(`
         INSERT INTO Componentes_Inventario (
           id_componente, nombre, descripcion, cantidad_stock, precio_unitario, unidad, activo, id_ci
@@ -240,7 +240,7 @@ router.put('/admin/inventario/componentes/:id_componente', ...requireAdmin, asyn
     }
     if (id_ci !== undefined) {
       const idCiValid = await validateIdCiOptional(pool, id_ci)
-      request.input('id_ci', sql.VarChar(25), idCiValid)
+      request.input('id_ci', sql.VarChar(50), idCiValid)
       sets += ', id_ci = @id_ci'
     }
 
@@ -266,7 +266,7 @@ router.get('/ci/:id_ci/componentes-inventario', ...requireAdmin, async (req, res
 
     const result = await pool
       .request()
-      .input('id_ci', sql.VarChar(25), id_ci)
+      .input('id_ci', sql.VarChar(50), id_ci)
       .query(`
         ${COMPONENTES_SELECT_ADMIN}
         WHERE c.id_ci = @id_ci
@@ -293,7 +293,7 @@ router.get('/inventario/componentes', ...requireTecnico, async (req, res) => {
 
     const result = await pool
       .request()
-      .input('id_ci', sql.VarChar(25), id_ci)
+      .input('id_ci', sql.VarChar(50), id_ci)
       .query(`
         SELECT
           c.id_componente,
@@ -329,7 +329,7 @@ router.get('/ci/:id_ci/solicitudes-cambio', ...requireAdminOrTecnico, async (req
 
     const result = await pool
       .request()
-      .input('id_ci', sql.VarChar(25), id_ci)
+      .input('id_ci', sql.VarChar(50), id_ci)
       .query(`
         SELECT
           s.id_solicitud,
@@ -379,7 +379,7 @@ router.post('/ci/:id_ci/solicitudes-cambio', ...requireTecnico, async (req, res)
     const mantenimientoResult = await pool
       .request()
       .input('id_mantenimiento', sql.Char(10), id_mantenimiento)
-      .input('id_ci', sql.VarChar(25), id_ci)
+      .input('id_ci', sql.VarChar(50), id_ci)
       .input('id_tecnico_asignado', sql.Char(15), req.user?.sub)
       .query(`
         SELECT id_mantenimiento, tipo_mantenimiento
@@ -447,7 +447,7 @@ router.post('/ci/:id_ci/solicitudes-cambio', ...requireTecnico, async (req, res)
       await new sql.Request(transaction)
         .input('id_solicitud', sql.Char(12), id_solicitud)
         .input('numero_rfc', sql.VarChar(25), numero_rfc)
-        .input('id_ci', sql.VarChar(25), id_ci)
+        .input('id_ci', sql.VarChar(50), id_ci)
         .input('id_mantenimiento', sql.Char(10), id_mantenimiento)
         .input('id_tecnico', sql.Char(15), req.user?.sub)
         .input('detalle_cambio', sql.VarChar(500), detalle_cambio)
@@ -707,7 +707,7 @@ router.post('/admin/solicitudes-cambio/:id_solicitud/aprobar', ...requireAdmin, 
       }
 
       const historialRes = await new sql.Request(transaction)
-        .input('id_ci', sql.VarChar(25), solicitud.id_ci)
+        .input('id_ci', sql.VarChar(50), solicitud.id_ci)
         .input('id_mantenimiento', sql.Char(10), solicitud.id_mantenimiento)
         .input('id_solicitud', sql.Char(12), solicitud.id_solicitud)
         .input('numero_rfc', sql.VarChar(25), solicitud.numero_rfc)

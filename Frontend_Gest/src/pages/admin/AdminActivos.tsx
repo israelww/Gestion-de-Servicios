@@ -61,6 +61,19 @@ type HistorialCambioCI = {
   fecha_registro: string;
 };
 
+type ProblemaCI = {
+  id_problema: number;
+  id_ci: string;
+  id_mantenimiento: string | null;
+  fecha_problema: string;
+  numero_transaccion: string | null;
+  origen_transaccion: string | null;
+  tecnico: string;
+  error_conocido: string;
+  solucion_raiz_o_workaround: string;
+  fecha_registro: string;
+};
+
 type ComponenteAsignadoCI = {
   id_componente: string;
   nombre: string;
@@ -207,6 +220,12 @@ const initialCi = {
   id_usuario_responsable: "",
 };
 
+const initialProblemaForm = () => ({
+  fecha_problema: new Date().toISOString().slice(0, 10),
+  error_conocido: "",
+  solucion_raiz_o_workaround: "",
+});
+
 const headers = () => {
   const token = getToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -350,8 +369,13 @@ export default function AdminActivos() {
   const [catalogos, setCatalogos] = useState<CatalogosCI>({ tipos_ci: [], marcas: [], edificios: [], usuarios: [] });
   const [inventario, setInventario] = useState<InventarioCI[]>([]);
   const [selectedCiHistorial, setSelectedCiHistorial] = useState<InventarioCI | null>(null);
+  const [selectedCiProblemas, setSelectedCiProblemas] = useState<InventarioCI | null>(null);
   const [historialCambios, setHistorialCambios] = useState<HistorialCambioCI[]>([]);
   const [historialLoading, setHistorialLoading] = useState(false);
+  const [problemasCi, setProblemasCi] = useState<ProblemaCI[]>([]);
+  const [problemasLoading, setProblemasLoading] = useState(false);
+  const [problemaSubmitting, setProblemaSubmitting] = useState(false);
+  const [problemaForm, setProblemaForm] = useState(() => initialProblemaForm());
   const [componentesAsignados, setComponentesAsignados] = useState<ComponenteAsignadoCI[]>([]);
   const [componentesAsignadosLoading, setComponentesAsignadosLoading] = useState(false);
   const [creatingPreventivo, setCreatingPreventivo] = useState(false);
@@ -676,6 +700,21 @@ export default function AdminActivos() {
     }
   };
 
+  const loadProblemasCi = async (idCi: string) => {
+    setProblemasLoading(true);
+    try {
+      const response = await axios.get<ProblemaCI[]>(
+        `${API_BASE_URL}/problemas/${cleanId(idCi)}`,
+        { headers: headers() }
+      );
+      setProblemasCi(response.data || []);
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, "No se pudo cargar el historial de problemas."));
+    } finally {
+      setProblemasLoading(false);
+    }
+  };
+
   const openHistorialModal = async (item: InventarioCI) => {
     setSelectedCiHistorial(item);
     setHistorialCambios([]);
@@ -686,11 +725,26 @@ export default function AdminActivos() {
     await Promise.all([loadHistorialCambios(item.id_ci), loadComponentesAsignados(item.id_ci)]);
   };
 
+  const openProblemasModal = async (item: InventarioCI) => {
+    setSelectedCiProblemas(item);
+    setProblemasCi([]);
+    setProblemaForm(initialProblemaForm());
+    setStatusMessage("");
+    setErrorMessage("");
+    await loadProblemasCi(item.id_ci);
+  };
+
   const closeHistorialModal = () => {
     setSelectedCiHistorial(null);
     setHistorialCambios([]);
     setComponentesAsignados([]);
     setPreventivoDescripcion("");
+  };
+
+  const closeProblemasModal = () => {
+    setSelectedCiProblemas(null);
+    setProblemasCi([]);
+    setProblemaForm(initialProblemaForm());
   };
 
   const beginEditCi = (item: InventarioCI) => {
@@ -775,6 +829,35 @@ export default function AdminActivos() {
       setErrorMessage(getApiErrorMessage(error, "No se pudo crear el ticket preventivo."));
     } finally {
       setCreatingPreventivo(false);
+    }
+  };
+
+  const submitProblema = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedCiProblemas) return;
+
+    setProblemaSubmitting(true);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      await axios.post(
+        `${API_BASE_URL}/problemas`,
+        {
+          id_ci: cleanId(selectedCiProblemas.id_ci),
+          fecha_problema: problemaForm.fecha_problema,
+          error_conocido: problemaForm.error_conocido,
+          solucion_raiz_o_workaround: problemaForm.solucion_raiz_o_workaround,
+        },
+        { headers: headers() }
+      );
+      setProblemaForm(initialProblemaForm());
+      setStatusMessage("Problema registrado correctamente.");
+      await loadProblemasCi(selectedCiProblemas.id_ci);
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, "No se pudo registrar el problema."));
+    } finally {
+      setProblemaSubmitting(false);
     }
   };
 
@@ -1113,6 +1196,13 @@ export default function AdminActivos() {
                                     <ClipboardList className="h-4 w-4" />
                                     Historial
                                   </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void openProblemasModal(item)}
+                                    className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                                  >
+                                    Problemas
+                                  </button>
                                   <ActionButtons
                                     onEdit={() => beginEditCi(item)}
                                     onDelete={async () => {
@@ -1166,6 +1256,13 @@ export default function AdminActivos() {
                             >
                               <ClipboardList className="h-4 w-4" />
                               Historial
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void openProblemasModal(item)}
+                              className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                            >
+                              Problemas
                             </button>
                             <ActionButtons
                               onEdit={() => beginEditCi(item)}
@@ -1324,6 +1421,138 @@ export default function AdminActivos() {
                           className="w-full rounded-xl bg-[#001f3f] px-6 py-3 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-70"
                         >
                           {creatingPreventivo ? "Creando..." : "Crear Ticket Preventivo"}
+                        </button>
+                      </form>
+                    </section>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {selectedCiProblemas ? (
+              <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/55 p-4">
+                <div className="modal-content-wrapper">
+                  <div className="mb-0 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-900">
+                        Gestion de Problemas - {selectedCiProblemas.id_ci}
+                      </h3>
+                      <p className="text-sm text-slate-600">
+                        {selectedCiProblemas.nombre_equipo || "Sin nombre"} |{" "}
+                        {selectedCiProblemas.nombre_edificio} / {selectedCiProblemas.nombre_sublocalizacion}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeProblemasModal}
+                      className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+
+                  <div className="modal-grid-responsive">
+                    <section className="modal-history-section">
+                      <div className="mb-3 flex items-center justify-between">
+                        <h4 className="text-base font-semibold text-slate-900">Problemas Previos</h4>
+                        {problemasLoading ? <span className="text-xs text-slate-500">Cargando...</span> : null}
+                      </div>
+
+                      {!problemasCi.length && !problemasLoading ? (
+                        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                          Este CI aun no tiene problemas registrados.
+                        </div>
+                      ) : null}
+
+                      {problemasCi.length ? (
+                        <div className="max-h-[420px] space-y-3 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          {problemasCi.map((problema) => (
+                            <article
+                              key={problema.id_problema}
+                              className="rounded-lg border border-slate-200 bg-white p-3 text-sm"
+                            >
+                              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                <span className="font-semibold text-slate-900">
+                                  {formatDateTime(problema.fecha_problema)}
+                                </span>
+                                <span className="text-xs font-semibold uppercase text-slate-500">
+                                  {problema.origen_transaccion || "Problema"}
+                                </span>
+                              </div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Error Conocido / Sintoma
+                              </p>
+                              <p className="mt-1 whitespace-pre-line text-slate-800">{problema.error_conocido}</p>
+                              <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Solucion Definitiva o Temporal
+                              </p>
+                              <p className="mt-1 whitespace-pre-line text-slate-700">
+                                {problema.solucion_raiz_o_workaround}
+                              </p>
+                              <p className="mt-3 text-xs text-slate-500">Registrado por: {problema.tecnico}</p>
+                            </article>
+                          ))}
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="modal-form-section">
+                      <h4 className="text-base font-semibold text-slate-900">Nuevo Problema</h4>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Registra el error conocido y la causa raiz o workaround asociado al equipo.
+                      </p>
+
+                      <form className="mt-4 space-y-4" onSubmit={submitProblema}>
+                        <label className="block">
+                          <Label>Fecha</Label>
+                          <input
+                            type="date"
+                            value={problemaForm.fecha_problema}
+                            onChange={(e) =>
+                              setProblemaForm((prev) => ({ ...prev, fecha_problema: e.target.value }))
+                            }
+                            className={inputClass()}
+                            required
+                          />
+                        </label>
+
+                        <label className="block">
+                          <Label>Error Conocido / Sintoma</Label>
+                          <input
+                            value={problemaForm.error_conocido}
+                            onChange={(e) =>
+                              setProblemaForm((prev) => ({ ...prev, error_conocido: e.target.value }))
+                            }
+                            maxLength={500}
+                            className={inputClass()}
+                            placeholder="Ej. Reinicio intermitente al iniciar aplicaciones pesadas."
+                            required
+                          />
+                        </label>
+
+                        <label className="block">
+                          <Label>Solucion Definitiva o Temporal</Label>
+                          <textarea
+                            value={problemaForm.solucion_raiz_o_workaround}
+                            onChange={(e) =>
+                              setProblemaForm((prev) => ({
+                                ...prev,
+                                solucion_raiz_o_workaround: e.target.value,
+                              }))
+                            }
+                            rows={7}
+                            className={`${inputClass()} min-h-[180px]`}
+                            placeholder="Describe la causa raiz, la solucion definitiva o el workaround temporal."
+                            required
+                          />
+                        </label>
+
+                        <button
+                          type="submit"
+                          disabled={problemaSubmitting}
+                          className="w-full rounded-xl bg-[#001f3f] px-6 py-3 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-70"
+                        >
+                          {problemaSubmitting ? "Guardando..." : "Registrar Problema"}
                         </button>
                       </form>
                     </section>

@@ -100,7 +100,7 @@ END;
 GO
 
 -- Se cambio el id_ci de CHAR a VARCHAR
--- Alinear id_ci a VARCHAR(25) en la tabla principal y tablas relacionadas.
+-- Alinear id_ci a VARCHAR(50) en la tabla principal y tablas relacionadas.
 -- Corrige bases existentes que quedaron con id_ci CHAR(10), causando error 2628.
 SET XACT_ABORT ON;
 GO
@@ -143,20 +143,20 @@ BEGIN
   EXEC sys.sp_executesql @sqlIdCi;
 END;
 
--- 3. Alinear todas las columnas id_ci a VARCHAR(25).
+-- 3. Alinear todas las columnas id_ci a VARCHAR(50).
 IF OBJECT_ID('dbo.Elementos_Configuracion', 'U') IS NOT NULL
 BEGIN
-  ALTER TABLE dbo.Elementos_Configuracion ALTER COLUMN id_ci VARCHAR(25) NOT NULL;
+  ALTER TABLE dbo.Elementos_Configuracion ALTER COLUMN id_ci VARCHAR(50) NOT NULL;
 END;
 
 IF OBJECT_ID('dbo.Mantenimientos', 'U') IS NOT NULL
 BEGIN
-  ALTER TABLE dbo.Mantenimientos ALTER COLUMN id_ci VARCHAR(25) NULL;
+  ALTER TABLE dbo.Mantenimientos ALTER COLUMN id_ci VARCHAR(50) NULL;
 END;
 
 IF OBJECT_ID('dbo.Historial_Cambios_CI', 'U') IS NOT NULL
 BEGIN
-  ALTER TABLE dbo.Historial_Cambios_CI ALTER COLUMN id_ci VARCHAR(25) NOT NULL;
+  ALTER TABLE dbo.Historial_Cambios_CI ALTER COLUMN id_ci VARCHAR(50) NOT NULL;
 END;
 
 -- 4. Restaurar PK y FKs con nombres estables.

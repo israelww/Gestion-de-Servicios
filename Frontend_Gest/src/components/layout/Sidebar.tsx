@@ -80,7 +80,6 @@ export default function Sidebar({
     background: "rgba(15, 23, 42, 0.55)",
     color: "#ffffff",
     fontWeight: 600,
-    marginTop: "16px",
   };
 
   const handleLogout = () => {
@@ -90,37 +89,34 @@ export default function Sidebar({
 
   return (
     <aside
-      className="fixed left-0 top-0 z-20 h-screen w-[250px] backdrop-blur-xl"
+      className="global-sidebar fixed left-0 top-0 z-20 flex h-screen w-[250px] flex-col backdrop-blur-xl"
       style={{ background: "rgba(120,120,120,0.35)" }}
     >
-      <div className="flex h-screen flex-col justify-between px-6 py-8">
-        <div className="flex flex-1 flex-col">
-          <div className="flex flex-col items-center pb-6 text-center" style={{ paddingTop: "48px" }}>
-            <div
-              className="shrink-0 overflow-hidden rounded-full bg-slate-700/70 ring-2 ring-white/30"
-              style={{ width: 64, height: 64 }}
-            >
-              <img
-                src="/images/logo.png"
-                alt="Logo"
-                className="block rounded-full object-cover"
-                style={{ width: "100%", height: "100%", maxWidth: "100%", maxHeight: "100%" }}
-              />
-            </div>
-            <p className="mt-4 text-base font-semibold uppercase tracking-wide text-slate-100/90">
-              {headingLines[0]}
-            </p>
-            {headingLines[1] ? (
-              <p className="text-base font-semibold uppercase tracking-wide text-slate-100/90">
-                {headingLines[1]}
-              </p>
-            ) : null}
-          </div>
-
-          <nav
-            className="flex flex-1 flex-col gap-5 pt-10 text-sm text-slate-200"
-            aria-label="Navegacion principal"
+      <div className="sidebar-shell flex min-h-0 flex-1 flex-col px-6 py-8">
+        <div className="sidebar-header flex shrink-0 flex-col items-center pb-6 text-center">
+          <div
+            className="shrink-0 overflow-hidden rounded-full bg-slate-700/70 ring-2 ring-white/30"
+            style={{ width: 64, height: 64 }}
           >
+            <img
+              src="/images/logo.png"
+              alt="Logo"
+              className="block rounded-full object-cover"
+              style={{ width: "100%", height: "100%", maxWidth: "100%", maxHeight: "100%" }}
+            />
+          </div>
+          <p className="mt-4 text-base font-semibold uppercase tracking-wide text-slate-100/90">
+            {headingLines[0]}
+          </p>
+          {headingLines[1] ? (
+            <p className="text-base font-semibold uppercase tracking-wide text-slate-100/90">
+              {headingLines[1]}
+            </p>
+          ) : null}
+        </div>
+
+        <nav className="sidebar-nav flex min-h-0 flex-1 flex-col pt-10" aria-label="Navegacion principal">
+          <div className="sidebar-links flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto pr-1 text-sm text-slate-200">
             {groups.map((group) => (
               <div key={group.id} className="flex flex-col gap-2">
                 {group.label ? (
@@ -140,21 +136,21 @@ export default function Sidebar({
                         style={getNavStyle(item.id)}
                         onClick={() => onNavigate(item.id)}
                       >
-                        <Icon className="h-5 w-5" />
-                        {item.label}
+                        <Icon className="h-5 w-5 shrink-0" />
+                        <span className="min-w-0 truncate">{item.label}</span>
                       </button>
                     );
                   })}
                 </div>
               </div>
             ))}
-          </nav>
-        </div>
+          </div>
+        </nav>
 
-        <div className="mt-auto pt-4">
+        <div className="sidebar-footer mt-auto shrink-0 pt-4">
           <button type="button" style={logoutStyle} onClick={handleLogout}>
-            <LogOut className="h-5 w-5" />
-            Cerrar Sesion
+            <LogOut className="h-5 w-5 shrink-0" />
+            <span className="min-w-0 truncate">Cerrar Sesion</span>
           </button>
         </div>
       </div>
