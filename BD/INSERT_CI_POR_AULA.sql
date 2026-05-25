@@ -1,4 +1,4 @@
-USE ControlTotal;
+xUSE ControlTotal;
 GO
 
 SET NOCOUNT ON;

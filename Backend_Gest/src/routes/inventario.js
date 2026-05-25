@@ -91,8 +91,8 @@ async function loadSolicitudDetalle(pool, id_solicitud) {
         c.id_ci AS componente_id_ci,
         ci_comp.nombre_equipo AS componente_ci_nombre
       FROM Solicitud_Cambio_Detalle d
-      LEFT JOIN Elementos_Configuracion ci_comp ON ci_comp.id_ci = c.id_ci
       JOIN Componentes_Inventario c ON c.id_componente = d.id_componente
+      LEFT JOIN Elementos_Configuracion ci_comp ON ci_comp.id_ci = c.id_ci
       WHERE d.id_solicitud = @id_solicitud
     `)
 
