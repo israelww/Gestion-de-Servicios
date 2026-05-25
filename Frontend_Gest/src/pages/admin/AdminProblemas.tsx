@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import axios from "axios";
 import { getToken } from "../../auth/storage";
+import { ticketEstadoBadgeClasses } from "../../utils/ticketEstadoBadge";
 
 const API_BASE_URL = "http://localhost:4000/api";
 
@@ -40,6 +41,13 @@ const formatDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+};
+
+const problemStatusBadgeClasses = (estado: string) => {
+  const normalized = estado.trim().toLowerCase();
+  if (normalized === "en investigacion") return ticketEstadoBadgeClasses("Pendiente");
+  if (normalized === "resuelto") return ticketEstadoBadgeClasses("Liberado");
+  return ticketEstadoBadgeClasses(estado);
 };
 
 export default function AdminProblemas() {
@@ -267,7 +275,15 @@ export default function AdminProblemas() {
                         <td className="px-3 py-2">{solicitud.titulo}</td>
                         <td className="px-3 py-2">{solicitud.nombre_tipo}</td>
                         <td className="px-3 py-2">{solicitud.tecnico_especialista}</td>
-                        <td className="px-3 py-2">{solicitud.estado}</td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${problemStatusBadgeClasses(
+                              solicitud.estado
+                            )}`}
+                          >
+                            {solicitud.estado}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

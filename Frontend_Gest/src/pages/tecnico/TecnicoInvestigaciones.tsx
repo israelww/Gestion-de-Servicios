@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import axios from "axios";
 import { getToken } from "../../auth/storage";
+import { ticketEstadoBadgeClasses } from "../../utils/ticketEstadoBadge";
 
 const API_BASE_URL = "http://localhost:4000/api";
 
@@ -42,6 +43,13 @@ const formatDate = (value: string) => {
     month: "short",
     year: "numeric",
   }).format(date);
+};
+
+const problemStatusBadgeClasses = (estado: string) => {
+  const normalized = estado.trim().toLowerCase();
+  if (normalized === "en investigacion") return ticketEstadoBadgeClasses("Pendiente");
+  if (normalized === "resuelto") return ticketEstadoBadgeClasses("Liberado");
+  return ticketEstadoBadgeClasses(estado);
 };
 
 export default function TecnicoInvestigaciones() {
@@ -142,7 +150,16 @@ export default function TecnicoInvestigaciones() {
                 >
                   <span className="block font-semibold">{solicitud.id_solicitud}</span>
                   <span className="block">{solicitud.titulo}</span>
-                  <span className="mt-1 block text-xs text-slate-500">{solicitud.nombre_tipo} · {solicitud.estado}</span>
+                  <span className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-slate-500">{solicitud.nombre_tipo}</span>
+                    <span
+                      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${problemStatusBadgeClasses(
+                        solicitud.estado
+                      )}`}
+                    >
+                      {solicitud.estado}
+                    </span>
+                  </span>
                 </button>
               ))}
             </div>
@@ -160,6 +177,13 @@ export default function TecnicoInvestigaciones() {
                   <p className="mt-1 text-xs text-slate-500">
                     {selected.id_solicitud} · {selected.nombre_tipo} · {formatDate(selected.fecha_creacion)}
                   </p>
+                  <span
+                    className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${problemStatusBadgeClasses(
+                      selected.estado
+                    )}`}
+                  >
+                    {selected.estado}
+                  </span>
                   <p className="mt-4 whitespace-pre-line text-sm text-slate-700">{selected.descripcion_problematica}</p>
 
                   <h4 className="mt-6 text-sm font-bold uppercase text-slate-600">Incidencias relacionadas</h4>
