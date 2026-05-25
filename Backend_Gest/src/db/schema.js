@@ -6,6 +6,7 @@ let serviciosSchemaReady = false
 let tecnicoTableReady    = false
 let workflowSchemaReady  = false
 let ciHistorySchemaReady = false
+let inventarioSchemaReady = false
 
 // ─── ensureServiciosCatalogSchema ─────────────────────────────────────────────
 
@@ -191,8 +192,9 @@ async function ensureTecnicoTable(pool) {
 
       IF @pkName IS NOT NULL
       BEGIN
-        DECLARE @dropPkSql NVARCHAR(500) = N'ALTER TABLE Tecnico DROP CONSTRAINT ' + QUOTENAME(@pkName);
-        EXEC(@dropPkSql);
+        DECLARE @dropPkSql NVARCHAR(500) =
+          N'ALTER TABLE Tecnico DROP CONSTRAINT [' + REPLACE(@pkName, ']', ']]') + N']';
+        EXEC sp_executesql @dropPkSql;
       END
 
       ALTER TABLE Tecnico ADD CONSTRAINT PK_Tecnico PRIMARY KEY (id_tecnico);
@@ -308,8 +310,8 @@ async function ensureWorkflowColumns(pool) {
       IF @fkSrv IS NOT NULL
       BEGIN
         DECLARE @dropSrv NVARCHAR(500) =
-          N'ALTER TABLE Mantenimientos DROP CONSTRAINT ' + QUOTENAME(@fkSrv);
-        EXEC(@dropSrv);
+          N'ALTER TABLE Mantenimientos DROP CONSTRAINT [' + REPLACE(@fkSrv, ']', ']]') + N']';
+        EXEC sp_executesql @dropSrv;
       END
 
       ALTER TABLE Mantenimientos ALTER COLUMN id_servicio CHAR(10) NULL;
@@ -354,6 +356,8 @@ async function ensureCiHistoryTable(pool) {
         id_historial INT IDENTITY(1,1) PRIMARY KEY,
         id_ci VARCHAR(25) NOT NULL,
         id_mantenimiento CHAR(10) NULL,
+        id_solicitud CHAR(12) NULL,
+        numero_rfc VARCHAR(25) NULL,
         fecha_cambio DATETIME NOT NULL CONSTRAINT DF_HistorialCI_fecha DEFAULT GETDATE(),
         numero_transaccion VARCHAR(40) NULL,
         origen_transaccion VARCHAR(40) NULL,
@@ -381,9 +385,104 @@ async function ensureCiHistoryTable(pool) {
       ADD CONSTRAINT FK_HistorialCI_Mantenimiento
       FOREIGN KEY (id_mantenimiento) REFERENCES Mantenimientos(id_mantenimiento)
     END;
+
+    IF COL_LENGTH('Historial_Cambios_CI', 'id_solicitud') IS NULL
+      ALTER TABLE Historial_Cambios_CI ADD id_solicitud CHAR(12) NULL;
+
+    IF COL_LENGTH('Historial_Cambios_CI', 'numero_rfc') IS NULL
+      ALTER TABLE Historial_Cambios_CI ADD numero_rfc VARCHAR(25) NULL;
   `)
 
   ciHistorySchemaReady = true
+}
+
+// ─── ensureInventarioSchema ───────────────────────────────────────────────────
+
+async function ensureInventarioSchema(pool) {
+  if (inventarioSchemaReady) return
+
+  await ensureCiHistoryTable(pool)
+
+  await pool.request().query(`
+    IF OBJECT_ID('Componentes_Inventario', 'U') IS NULL
+    BEGIN
+      CREATE TABLE Componentes_Inventario (
+        id_componente CHAR(10) NOT NULL,
+        nombre VARCHAR(150) NOT NULL,
+        descripcion VARCHAR(500) NULL,
+        cantidad_stock INT NOT NULL CONSTRAINT DF_Componentes_stock DEFAULT 0,
+        precio_unitario DECIMAL(10, 2) NOT NULL,
+        unidad VARCHAR(20) NULL,
+        activo BIT NOT NULL CONSTRAINT DF_Componentes_activo DEFAULT 1,
+        id_ci VARCHAR(25) NULL,
+        CONSTRAINT PK_Componentes_Inventario PRIMARY KEY (id_componente)
+      );
+    END;
+
+    IF COL_LENGTH('Componentes_Inventario', 'id_ci') IS NULL
+      ALTER TABLE Componentes_Inventario ADD id_ci VARCHAR(25) NULL;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_Componentes_CI'
+    )
+    AND OBJECT_ID('Componentes_Inventario', 'U') IS NOT NULL
+    AND OBJECT_ID('Elementos_Configuracion', 'U') IS NOT NULL
+    BEGIN
+      ALTER TABLE Componentes_Inventario
+      ADD CONSTRAINT FK_Componentes_CI FOREIGN KEY (id_ci) REFERENCES Elementos_Configuracion(id_ci);
+    END;
+
+    IF OBJECT_ID('Solicitud_Cambio_Componente', 'U') IS NULL
+    BEGIN
+      CREATE TABLE Solicitud_Cambio_Componente (
+        id_solicitud CHAR(12) NOT NULL,
+        numero_rfc VARCHAR(25) NOT NULL,
+        id_ci VARCHAR(25) NOT NULL,
+        id_mantenimiento CHAR(10) NOT NULL,
+        id_tecnico CHAR(15) NOT NULL,
+        detalle_cambio VARCHAR(500) NOT NULL,
+        fecha_solicitud DATETIME NOT NULL CONSTRAINT DF_SolicitudCambio_fecha DEFAULT GETDATE(),
+        estado VARCHAR(30) NOT NULL,
+        monto_total DECIMAL(12, 2) NOT NULL,
+        requiere_institucion BIT NOT NULL CONSTRAINT DF_SolicitudCambio_inst DEFAULT 0,
+        fecha_institucion_ok DATETIME NULL,
+        comentario_admin VARCHAR(500) NULL,
+        fecha_resolucion DATETIME NULL,
+        id_historial INT NULL,
+        CONSTRAINT PK_Solicitud_Cambio PRIMARY KEY (id_solicitud),
+        CONSTRAINT UQ_Solicitud_Cambio_RFC UNIQUE (numero_rfc),
+        CONSTRAINT FK_SolicitudCambio_CI FOREIGN KEY (id_ci) REFERENCES Elementos_Configuracion(id_ci),
+        CONSTRAINT FK_SolicitudCambio_Mantenimiento FOREIGN KEY (id_mantenimiento) REFERENCES Mantenimientos(id_mantenimiento),
+        CONSTRAINT FK_SolicitudCambio_Tecnico FOREIGN KEY (id_tecnico) REFERENCES Usuarios(id_usuario)
+      );
+    END;
+
+    IF OBJECT_ID('Solicitud_Cambio_Detalle', 'U') IS NULL
+    BEGIN
+      CREATE TABLE Solicitud_Cambio_Detalle (
+        id_detalle INT IDENTITY(1,1) PRIMARY KEY,
+        id_solicitud CHAR(12) NOT NULL,
+        id_componente CHAR(10) NOT NULL,
+        cantidad INT NOT NULL,
+        precio_unitario DECIMAL(10, 2) NOT NULL,
+        CONSTRAINT FK_SolicitudDetalle_Solicitud FOREIGN KEY (id_solicitud) REFERENCES Solicitud_Cambio_Componente(id_solicitud),
+        CONSTRAINT FK_SolicitudDetalle_Componente FOREIGN KEY (id_componente) REFERENCES Componentes_Inventario(id_componente)
+      );
+    END;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_SolicitudCambio_Historial'
+    )
+    AND OBJECT_ID('Historial_Cambios_CI', 'U') IS NOT NULL
+    AND OBJECT_ID('Solicitud_Cambio_Componente', 'U') IS NOT NULL
+    BEGIN
+      ALTER TABLE Solicitud_Cambio_Componente
+      ADD CONSTRAINT FK_SolicitudCambio_Historial
+      FOREIGN KEY (id_historial) REFERENCES Historial_Cambios_CI(id_historial);
+    END;
+  `)
+
+  inventarioSchemaReady = true
 }
 
 module.exports = {
@@ -391,4 +490,5 @@ module.exports = {
   ensureTecnicoTable,
   ensureWorkflowColumns,
   ensureCiHistoryTable,
+  ensureInventarioSchema,
 }

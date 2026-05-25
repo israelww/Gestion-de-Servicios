@@ -133,10 +133,60 @@ CREATE TABLE Historial_Cambios_CI (
     id_historial INT IDENTITY(1,1) PRIMARY KEY,
     id_ci VARCHAR(25) NOT NULL REFERENCES Elementos_Configuracion(id_ci),
     id_mantenimiento CHAR(10) REFERENCES Mantenimientos(id_mantenimiento),
+    id_solicitud CHAR(12) NULL,
+    numero_rfc VARCHAR(25) NULL,
     fecha_cambio DATETIME NOT NULL DEFAULT GETDATE(),
     numero_transaccion VARCHAR(40),
     origen_transaccion VARCHAR(40), -- Ticket, Mantenimiento Preventivo, Otro
     tecnico VARCHAR(120) NOT NULL,
     detalle_cambio VARCHAR(500) NOT NULL,
     fecha_registro DATETIME NOT NULL DEFAULT GETDATE()
+);
+
+-- 7. Inventario de componentes / repuestos
+CREATE TABLE Componentes_Inventario (
+    id_componente CHAR(10) NOT NULL,
+    nombre VARCHAR(150) NOT NULL,
+    descripcion VARCHAR(500) NULL,
+    cantidad_stock INT NOT NULL CONSTRAINT DF_Componentes_stock DEFAULT 0,
+    precio_unitario DECIMAL(10, 2) NOT NULL,
+    unidad VARCHAR(20) NULL,
+    activo BIT NOT NULL CONSTRAINT DF_Componentes_activo DEFAULT 1,
+    id_ci VARCHAR(25) NULL,
+    CONSTRAINT PK_Componentes_Inventario PRIMARY KEY (id_componente),
+    CONSTRAINT FK_Componentes_CI FOREIGN KEY (id_ci) REFERENCES Elementos_Configuracion(id_ci)
+);
+
+-- 8. Solicitudes de cambio de componentes (RFC)
+CREATE TABLE Solicitud_Cambio_Componente (
+    id_solicitud CHAR(12) NOT NULL,
+    numero_rfc VARCHAR(25) NOT NULL,
+    id_ci VARCHAR(25) NOT NULL,
+    id_mantenimiento CHAR(10) NOT NULL,
+    id_tecnico CHAR(15) NOT NULL,
+    detalle_cambio VARCHAR(500) NOT NULL,
+    fecha_solicitud DATETIME NOT NULL CONSTRAINT DF_SolicitudCambio_fecha DEFAULT GETDATE(),
+    estado VARCHAR(30) NOT NULL,
+    monto_total DECIMAL(12, 2) NOT NULL,
+    requiere_institucion BIT NOT NULL CONSTRAINT DF_SolicitudCambio_inst DEFAULT 0,
+    fecha_institucion_ok DATETIME NULL,
+    comentario_admin VARCHAR(500) NULL,
+    fecha_resolucion DATETIME NULL,
+    id_historial INT NULL,
+    CONSTRAINT PK_Solicitud_Cambio PRIMARY KEY (id_solicitud),
+    CONSTRAINT UQ_Solicitud_Cambio_RFC UNIQUE (numero_rfc),
+    CONSTRAINT FK_SolicitudCambio_CI FOREIGN KEY (id_ci) REFERENCES Elementos_Configuracion(id_ci),
+    CONSTRAINT FK_SolicitudCambio_Mantenimiento FOREIGN KEY (id_mantenimiento) REFERENCES Mantenimientos(id_mantenimiento),
+    CONSTRAINT FK_SolicitudCambio_Tecnico FOREIGN KEY (id_tecnico) REFERENCES Usuarios(id_usuario),
+    CONSTRAINT FK_SolicitudCambio_Historial FOREIGN KEY (id_historial) REFERENCES Historial_Cambios_CI(id_historial)
+);
+
+CREATE TABLE Solicitud_Cambio_Detalle (
+    id_detalle INT IDENTITY(1,1) PRIMARY KEY,
+    id_solicitud CHAR(12) NOT NULL,
+    id_componente CHAR(10) NOT NULL,
+    cantidad INT NOT NULL,
+    precio_unitario DECIMAL(10, 2) NOT NULL,
+    CONSTRAINT FK_SolicitudDetalle_Solicitud FOREIGN KEY (id_solicitud) REFERENCES Solicitud_Cambio_Componente(id_solicitud),
+    CONSTRAINT FK_SolicitudDetalle_Componente FOREIGN KEY (id_componente) REFERENCES Componentes_Inventario(id_componente)
 );

@@ -131,12 +131,51 @@ function stringifyHorario(horario) {
   }
 }
 
+async function findNextComponenteId(request) {
+  const result = await request.query(
+    `SELECT id_componente FROM Componentes_Inventario WHERE id_componente LIKE 'CP%'`
+  )
+  const max = (result.recordset || []).reduce((m, row) => {
+    const raw = String(row.id_componente || '').replace(/^CP/i, '')
+    const n = Number.parseInt(raw, 10)
+    return Number.isNaN(n) ? m : Math.max(m, n)
+  }, 0)
+  return `CP${String(max + 1).padStart(8, '0')}`
+}
+
+async function findNextSolicitudId(request) {
+  const result = await request.query(
+    `SELECT id_solicitud FROM Solicitud_Cambio_Componente WHERE id_solicitud LIKE 'SC%'`
+  )
+  const max = (result.recordset || []).reduce((m, row) => {
+    const raw = String(row.id_solicitud || '').replace(/^SC/i, '')
+    const n = Number.parseInt(raw, 10)
+    return Number.isNaN(n) ? m : Math.max(m, n)
+  }, 0)
+  return `SC${String(max + 1).padStart(10, '0')}`
+}
+
+async function findNextNumeroRfc(request) {
+  const result = await request.query(
+    `SELECT numero_rfc FROM Solicitud_Cambio_Componente WHERE numero_rfc LIKE 'RFC-%'`
+  )
+  const max = (result.recordset || []).reduce((m, row) => {
+    const raw = String(row.numero_rfc || '').replace(/^RFC-/i, '')
+    const n = Number.parseInt(raw, 10)
+    return Number.isNaN(n) ? m : Math.max(m, n)
+  }, 0)
+  return `RFC-${String(max + 1).padStart(5, '0')}`
+}
+
 module.exports = {
   findNextMaintenanceId,
   findNextAreaId,
   findNextServicioId,
   findNextTecnicoId,
   findNextUsuarioIdForRole,
+  findNextComponenteId,
+  findNextSolicitudId,
+  findNextNumeroRfc,
   fourCharRoleCode,
   getRolNombre,
   horarioTecnicoValido,

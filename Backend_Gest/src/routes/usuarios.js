@@ -64,10 +64,22 @@ router.get('/usuarios', ...requireAdmin, async (_req, res) => {
         r.nombre_rol,
         t.id_tecnico,
         t.id_area AS tecnico_id_area,
-        t.horario AS tecnico_horario
+        t.horario AS tecnico_horario,
+        cal.promedio_calificacion,
+        cal.total_valoraciones
       FROM Usuarios u
       JOIN Roles r ON r.id_rol = u.id_rol
       LEFT JOIN Tecnico t ON t.id_usuario = u.id_usuario
+      LEFT JOIN (
+        SELECT
+          id_tecnico_asignado,
+          CAST(AVG(CAST(calificacion_servicio AS DECIMAL(4, 2))) AS DECIMAL(4, 2)) AS promedio_calificacion,
+          COUNT(*) AS total_valoraciones
+        FROM Mantenimientos
+        WHERE id_tecnico_asignado IS NOT NULL
+          AND calificacion_servicio IS NOT NULL
+        GROUP BY id_tecnico_asignado
+      ) cal ON cal.id_tecnico_asignado = u.id_usuario
       ORDER BY u.nombre_completo
     `)
     return res.status(200).json(result.recordset)

@@ -25,6 +25,7 @@ app.use('/api', require('./src/routes/ci'))
 app.use('/api', require('./src/routes/reportes'))
 app.use('/api', require('./src/routes/tecnico'))
 app.use('/api', require('./src/routes/admin'))
+app.use('/api', require('./src/routes/inventario'))
 
 // ─── Arranque del servidor ────────────────────────────────────────────────────
 const { testDatabaseConnection } = require('./src/config/db')

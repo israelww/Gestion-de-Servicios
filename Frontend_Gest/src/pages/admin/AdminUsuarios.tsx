@@ -61,6 +61,15 @@ function horarioTieneServicio(h: Record<DiaKey, SlotDia>): boolean {
   });
 }
 
+function formatPromedioCalificacion(usuario: Usuario): string {
+  if (usuario.nombre_rol !== NOMBRE_ROL_TECNICO) return "—";
+  const total = Number(usuario.total_valoraciones ?? 0);
+  if (!total || usuario.promedio_calificacion == null) return "Sin valoraciones";
+  const promedio = Number(usuario.promedio_calificacion);
+  if (Number.isNaN(promedio)) return "Sin valoraciones";
+  return `${promedio.toFixed(1)} / 5 (${total} valoracion${total === 1 ? "" : "es"})`;
+}
+
 interface Usuario {
   id_usuario: string;
   nombre_completo: string;
@@ -70,6 +79,8 @@ interface Usuario {
   id_tecnico?: string | null;
   tecnico_id_area?: string | null;
   tecnico_horario?: string | null;
+  promedio_calificacion?: number | string | null;
+  total_valoraciones?: number | null;
 }
 
 interface Rol {
@@ -547,6 +558,12 @@ export default function AdminUsuarios() {
               <p className="md:col-span-2">
                 <span className="font-semibold">Horario:</span> {detalleHorario(usuarioSeleccionado)}
               </p>
+              {usuarioSeleccionado.nombre_rol === NOMBRE_ROL_TECNICO ? (
+                <p className="md:col-span-2">
+                  <span className="font-semibold">Promedio de calificacion:</span>{" "}
+                  {formatPromedioCalificacion(usuarioSeleccionado)}
+                </p>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -576,6 +593,9 @@ export default function AdminUsuarios() {
                       <th className="px-4 py-3">ID</th>
                       <th className="px-4 py-3">Nombre</th>
                       <th className="px-4 py-3">Correo</th>
+                      {rol === NOMBRE_ROL_TECNICO ? (
+                        <th className="px-4 py-3">Promedio calif.</th>
+                      ) : null}
                       <th className="px-4 py-3 text-left">Accion</th>
                     </tr>
                   </thead>
@@ -585,6 +605,11 @@ export default function AdminUsuarios() {
                         <td className="px-4 py-3 font-medium">{usuario.id_usuario}</td>
                         <td className="px-4 py-3">{usuario.nombre_completo}</td>
                         <td className="px-4 py-3">{usuario.correo}</td>
+                        {rol === NOMBRE_ROL_TECNICO ? (
+                          <td className="px-4 py-3 text-slate-700">
+                            {formatPromedioCalificacion(usuario)}
+                          </td>
+                        ) : null}
                         <td className="px-4 py-3">
                           <div className="inline-flex gap-2">
                             <button

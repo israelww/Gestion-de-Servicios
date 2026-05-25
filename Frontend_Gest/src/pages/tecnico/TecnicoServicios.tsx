@@ -49,12 +49,36 @@ type HistorialCambioCI = {
   id_historial: number;
   id_ci: string;
   fecha_cambio: string;
+  numero_rfc?: string | null;
   numero_transaccion: string | null;
   origen_transaccion: string | null;
   tecnico: string;
   detalle_cambio: string;
   fecha_registro: string;
 };
+
+type ComponenteInventario = {
+  id_componente: string;
+  nombre: string;
+  cantidad_stock: number;
+  precio_unitario: number | string;
+  unidad: string | null;
+  id_ci?: string | null;
+};
+
+type SolicitudCambioRow = {
+  id_solicitud: string;
+  numero_rfc: string;
+  estado: string;
+  monto_total: number | string;
+  requiere_institucion: boolean | number;
+  fecha_solicitud: string;
+  detalle_cambio: string;
+};
+
+type LineaSolicitud = { id_componente: string; cantidad: number };
+
+const MONTO_LIMITE_INSTITUCION = 1000;
 
 interface ServicioCatalogo {
   id_servicio: string;
@@ -76,9 +100,10 @@ interface HojaTrabajoResponse {
 }
 
 const initialHistoryForm = {
-  fecha_cambio: "",
   detalle_cambio: "",
 };
+
+const initialLinea = (): LineaSolicitud => ({ id_componente: "", cantidad: 1 });
 
 const headers = () => {
   const token = getToken();
@@ -122,6 +147,9 @@ export default function TecnicoServicios() {
   const [historialLoading, setHistorialLoading] = useState(false);
   const [historialSubmitting, setHistorialSubmitting] = useState(false);
   const [historyForm, setHistoryForm] = useState(initialHistoryForm);
+  const [componentesInventario, setComponentesInventario] = useState<ComponenteInventario[]>([]);
+  const [lineasSolicitud, setLineasSolicitud] = useState<LineaSolicitud[]>([initialLinea()]);
+  const [solicitudesCambio, setSolicitudesCambio] = useState<SolicitudCambioRow[]>([]);
   const [tecnicoId, setTecnicoId] = useState("");
   const [servicioACompletar, setServicioACompletar] = useState<ServicioTecnico | null>(null);
   const [hojaTrabajo, setHojaTrabajo] = useState<HojaTrabajoResponse | null>(null);
@@ -219,44 +247,109 @@ export default function TecnicoServicios() {
     return () => window.clearTimeout(timer);
   }, [errorMessage]);
 
+  const loadSolicitudes = async (idCi: string) => {
+    try {
+      const response = await axios.get<SolicitudCambioRow[]>(
+        `${API_BASE_URL}/ci/${idCi}/solicitudes-cambio`,
+        { headers: headers() }
+      );
+      setSolicitudesCambio(response.data || []);
+    } catch {
+      setSolicitudesCambio([]);
+    }
+  };
+
+  const loadComponentesInventario = async (idCi: string) => {
+    try {
+      const response = await axios.get<ComponenteInventario[]>(
+        `${API_BASE_URL}/inventario/componentes`,
+        {
+          headers: headers(),
+          params: { id_ci: idCi.trim() },
+        }
+      );
+      setComponentesInventario(response.data || []);
+    } catch {
+      setComponentesInventario([]);
+    }
+  };
+
+  const componenteOptionLabel = (c: ComponenteInventario) => {
+    const base = `${c.nombre} (stock: ${c.cantidad_stock}) — $${Number(c.precio_unitario).toFixed(2)}`;
+    if (c.id_ci?.trim()) return `${base} · asignado a este CI`;
+    return `${base} · general`;
+  };
+
   const openHistorialModal = async (item: ServicioTecnico) => {
     setSelectedServicio(item);
     setHistoryForm(initialHistoryForm);
+    setLineasSolicitud([initialLinea()]);
     setHistorialCambios([]);
+    setSolicitudesCambio([]);
     setStatusMessage("");
     setErrorMessage("");
-    await loadHistorial(item.id_ci);
+    await Promise.all([
+      loadHistorial(item.id_ci),
+      loadSolicitudes(item.id_ci),
+      loadComponentesInventario(item.id_ci),
+    ]);
   };
 
   const closeHistorialModal = () => {
     setSelectedServicio(null);
     setHistorialCambios([]);
+    setSolicitudesCambio([]);
     setHistoryForm(initialHistoryForm);
+    setLineasSolicitud([initialLinea()]);
   };
 
-  const submitHistorialCambio = async (event: FormEvent<HTMLFormElement>) => {
+  const montoEstimadoSolicitud = lineasSolicitud.reduce((sum, linea) => {
+    const comp = componentesInventario.find((c) => c.id_componente === linea.id_componente);
+    if (!comp || !linea.cantidad) return sum;
+    return sum + Number(comp.precio_unitario) * linea.cantidad;
+  }, 0);
+
+  const requiereInstitucionEstimado = lineasSolicitud.some((linea) => {
+    const comp = componentesInventario.find((c) => c.id_componente === linea.id_componente);
+    return comp && Number(comp.precio_unitario) >= MONTO_LIMITE_INSTITUCION;
+  });
+
+  const submitSolicitudCambio = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedServicio) return;
+
+    const lineas = lineasSolicitud.filter((l) => l.id_componente && l.cantidad > 0);
+    if (!lineas.length) {
+      setErrorMessage("Agregue al menos un componente con cantidad.");
+      return;
+    }
 
     setHistorialSubmitting(true);
     setStatusMessage("");
     setErrorMessage("");
 
     try {
-      await axios.post(
-        `${API_BASE_URL}/ci/${selectedServicio.id_ci}/historial-cambios`,
+      const res = await axios.post<{
+        message: string;
+        numero_rfc: string;
+        estado: string;
+      }>(
+        `${API_BASE_URL}/ci/${selectedServicio.id_ci}/solicitudes-cambio`,
         {
-          fecha_cambio: historyForm.fecha_cambio || undefined,
           id_mantenimiento: selectedServicio.id_reporte,
           detalle_cambio: historyForm.detalle_cambio,
+          lineas: lineas.map((l) => ({ id_componente: l.id_componente, cantidad: l.cantidad })),
         },
         { headers: headers() }
       );
       setHistoryForm(initialHistoryForm);
-      setStatusMessage("Cambio registrado correctamente.");
-      await loadHistorial(selectedServicio.id_ci);
+      setLineasSolicitud([initialLinea()]);
+      setStatusMessage(
+        `Solicitud enviada. RFC: ${res.data.numero_rfc || ""} (${res.data.estado || "Pendiente"}).`
+      );
+      await Promise.all([loadHistorial(selectedServicio.id_ci), loadSolicitudes(selectedServicio.id_ci)]);
     } catch (error) {
-      setErrorMessage(getApiErrorMessage(error, "No se pudo registrar el cambio."));
+      setErrorMessage(getApiErrorMessage(error, "No se pudo enviar la solicitud de cambio."));
     } finally {
       setHistorialSubmitting(false);
     }
@@ -547,9 +640,23 @@ export default function TecnicoServicios() {
                   {historialLoading ? <span className="text-xs text-slate-500">Cargando...</span> : null}
                 </div>
 
+                {solicitudesCambio.length ? (
+                  <div className="mb-4">
+                    <h5 className="text-sm font-semibold text-slate-800">Solicitudes enviadas</h5>
+                    <ul className="mt-2 max-h-32 space-y-1 overflow-auto text-xs text-slate-600">
+                      {solicitudesCambio.map((s) => (
+                        <li key={s.id_solicitud} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
+                          <span className="font-semibold text-[#001f3f]">{s.numero_rfc}</span> · {s.estado} · $
+                          {Number(s.monto_total).toFixed(2)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
                 {!historialCambios.length && !historialLoading ? (
                   <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-                    Este CI aun no tiene cambios registrados.
+                    Este CI aun no tiene cambios aprobados en historial.
                   </div>
                 ) : null}
 
@@ -559,8 +666,7 @@ export default function TecnicoServicios() {
                       <thead className="bg-slate-100 text-xs uppercase text-slate-500">
                         <tr>
                           <th className="px-3 py-2">Fecha</th>
-                          <th className="px-3 py-2">Transaccion</th>
-                          <th className="px-3 py-2">Tecnico</th>
+                          <th className="px-3 py-2">RFC</th>
                           <th className="px-3 py-2">Detalle</th>
                         </tr>
                       </thead>
@@ -568,11 +674,9 @@ export default function TecnicoServicios() {
                         {historialCambios.map((cambio) => (
                           <tr key={cambio.id_historial}>
                             <td className="px-3 py-2 align-top">{formatDate(cambio.fecha_cambio)}</td>
-                            <td className="px-3 py-2 align-top">
-                              <div className="font-medium text-slate-800">{cambio.numero_transaccion || "Sin numero"}</div>
-                              <div className="text-xs text-slate-500">{cambio.origen_transaccion || "Sin origen"}</div>
+                            <td className="px-3 py-2 align-top font-medium text-slate-800">
+                              {cambio.numero_rfc || cambio.numero_transaccion || "—"}
                             </td>
-                            <td className="px-3 py-2 align-top">{cambio.tecnico}</td>
                             <td className="px-3 py-2 align-top">{cambio.detalle_cambio}</td>
                           </tr>
                         ))}
@@ -583,75 +687,110 @@ export default function TecnicoServicios() {
               </section>
 
               <section className="modal-form-section">
-                <h4 className="text-base font-semibold text-slate-900">Registrar Nuevo Cambio</h4>
-                <form className="mt-4 space-y-4" onSubmit={submitHistorialCambio}>
+                <h4 className="text-base font-semibold text-slate-900">Solicitar cambio de componentes</h4>
+                <p className="mt-1 text-xs text-slate-500">
+                  Ticket {selectedServicio.id_reporte} · Tecnico {tecnicoId}
+                </p>
+                <form className="mt-4 space-y-4" onSubmit={submitSolicitudCambio}>
                   <label className="block">
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-700">Fecha del Cambio</span>
-                    <input
-                      type="datetime-local"
-                      value={historyForm.fecha_cambio}
-                      onChange={(e) => setHistoryForm((prev) => ({ ...prev, fecha_cambio: e.target.value }))}
-                      className={inputClass()}
-                    />
-                  </label>
-
-                  <label className="block">
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-700">Origen (Automatico)</span>
-                    <input
-                      value={
-                        selectedServicio?.tipo_mantenimiento?.toLowerCase() === "preventivo"
-                          ? "Preventivo"
-                          : "Correctivo"
-                      }
-                      className={inputClass(true)}
-                      readOnly
-                    />
-                  </label>
-
-                  <label className="block">
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-700">Numero de Transaccion (Automatico)</span>
-                    <input
-                      value={
-                        selectedServicio
-                          ? `${
-                              selectedServicio.tipo_mantenimiento?.toLowerCase() === "preventivo"
-                                ? "PRE"
-                                : "COR"
-                            }-${selectedServicio.id_reporte}`
-                          : ""
-                      }
-                      className={inputClass(true)}
-                      readOnly
-                    />
-                  </label>
-
-                  <label className="block">
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-700">Tecnico (Automatico)</span>
-                    <input
-                      value={tecnicoId}
-                      className={inputClass(true)}
-                      readOnly
-                    />
-                  </label>
-
-                  <label className="block">
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-700">Detalle del Cambio</span>
+                    <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-700">
+                      Detalle del cambio
+                    </span>
                     <textarea
                       value={historyForm.detalle_cambio}
                       onChange={(e) => setHistoryForm((prev) => ({ ...prev, detalle_cambio: e.target.value }))}
-                      rows={4}
-                      className={`${inputClass()} min-h-[120px]`}
+                      rows={3}
+                      className={`${inputClass()} min-h-[90px]`}
                       placeholder="Ej. Cambio de disco duro SSD 512GB por falla."
                       required
                     />
                   </label>
+
+                  <div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-gray-700">
+                        Componentes del inventario
+                      </span>
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-blue-800 hover:underline"
+                        onClick={() => setLineasSolicitud((prev) => [...prev, initialLinea()])}
+                      >
+                        + Agregar linea
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {lineasSolicitud.map((linea, idx) => (
+                        <div key={idx} className="grid grid-cols-[1fr_80px_32px] gap-2">
+                          <select
+                            className={inputClass()}
+                            value={linea.id_componente}
+                            onChange={(e) =>
+                              setLineasSolicitud((prev) =>
+                                prev.map((l, i) =>
+                                  i === idx ? { ...l, id_componente: e.target.value } : l
+                                )
+                              )
+                            }
+                            required
+                          >
+                            <option value="">Seleccione componente</option>
+                            {componentesInventario.map((c) => (
+                              <option key={c.id_componente} value={c.id_componente}>
+                                {componenteOptionLabel(c)}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            min={1}
+                            className={inputClass()}
+                            value={linea.cantidad}
+                            onChange={(e) =>
+                              setLineasSolicitud((prev) =>
+                                prev.map((l, i) =>
+                                  i === idx
+                                    ? {
+                                        ...l,
+                                        cantidad: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
+                                      }
+                                    : l
+                                )
+                              )
+                            }
+                          />
+                          <button
+                            type="button"
+                            className="rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100"
+                            onClick={() =>
+                              setLineasSolicitud((prev) =>
+                                prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev
+                              )
+                            }
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <p className="text-sm font-semibold text-slate-700">
+                    Monto estimado: ${montoEstimadoSolicitud.toFixed(2)} MXN
+                  </p>
+                  {requiereInstitucionEstimado ? (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      Incluye componente(s) de $1,000 o mas: requiere autorizacion institucional antes de que el
+                      administrador apruebe.
+                    </p>
+                  ) : null}
 
                   <button
                     type="submit"
                     disabled={historialSubmitting}
                     className="w-full rounded-xl bg-[#001f3f] px-6 py-3 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-70"
                   >
-                    {historialSubmitting ? "Guardando..." : "Registrar Cambio"}
+                    {historialSubmitting ? "Enviando..." : "Enviar solicitud (RFC)"}
                   </button>
                 </form>
               </section>
@@ -904,3 +1043,4 @@ export default function TecnicoServicios() {
     </section>
   );
 }
+

@@ -4,7 +4,8 @@ const sql     = require('mssql')
 const router = express.Router()
 const { getPool }                      = require('../config/db')
 const { resetSqlPool }                 = require('../config/db')
-const { requireAdmin, requireAdminOrTecnico } = require('../middleware/auth')
+const { requireAdmin, requireAdminOrTecnico, requireAuth } = require('../middleware/auth')
+const { ROLE_TECNICO } = require('../constants')
 const { toTrimmedString, badRequest, isForeignKeyError, existsById, getServerErrorMessage, getServerErrorDetail } = require('../helpers/sqlHelpers')
 const { normalizeEspecificacionesHardwareForDb, buildCiPrefix, findNextCiId, getCiTypeData } = require('../helpers/ciHelpers')
 const { ensureCiHistoryTable }         = require('../db/schema')
@@ -327,8 +328,8 @@ router.get('/ci/:id_ci/historial-cambios', ...requireAdminOrTecnico, async (req,
       .input('id_ci', sql.VarChar(25), id_ci)
       .query(`
         SELECT
-          id_historial, id_ci, id_mantenimiento, fecha_cambio,
-          numero_transaccion, origen_transaccion, tecnico, detalle_cambio, fecha_registro
+          id_historial, id_ci, id_mantenimiento, id_solicitud, numero_rfc,
+          fecha_cambio, numero_transaccion, origen_transaccion, tecnico, detalle_cambio, fecha_registro
         FROM Historial_Cambios_CI
         WHERE id_ci = @id_ci
         ORDER BY fecha_cambio DESC, id_historial DESC
@@ -340,8 +341,14 @@ router.get('/ci/:id_ci/historial-cambios', ...requireAdminOrTecnico, async (req,
   }
 })
 
-// POST /api/ci/:id_ci/historial-cambios
-router.post('/ci/:id_ci/historial-cambios', async (req, res) => {
+// POST /api/ci/:id_ci/historial-cambios (solo admin; técnicos usan solicitudes-cambio)
+router.post('/ci/:id_ci/historial-cambios', requireAuth, async (req, res) => {
+  if (toTrimmedString(req.user?.rol) === ROLE_TECNICO) {
+    return res.status(403).json({
+      message: 'Use solicitudes de cambio con inventario en lugar de registrar cambios directos',
+    })
+  }
+
   const id_ci  = toTrimmedString(req.params?.id_ci)
   const payload = {
     fecha_cambio:    toTrimmedString(req.body?.fecha_cambio),

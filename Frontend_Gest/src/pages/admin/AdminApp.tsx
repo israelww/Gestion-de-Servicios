@@ -4,6 +4,8 @@ import AdminActivos from "./AdminActivos";
 import AdminLayout from "./AdminLayout";
 import AdminUsuarios from "./AdminUsuarios";
 import AdminCatalogoServicios from "./AdminCatalogoServicios";
+import AdminInventarioComponentes from "./AdminInventarioComponentes";
+import AdminSolicitudesCambio from "./AdminSolicitudesCambio";
 import AdminTickets from "./AdminTickets";
 import AdminTicketDetalle from "./AdminTicketDetalle";
 
@@ -16,6 +18,8 @@ export default function AdminApp() {
         <Route path="gestion-infraestructura" element={<AdminActivos />} />
         <Route path="catalogo-ci" element={<AdminActivos />} />
         <Route path="catalogo-servicios" element={<AdminCatalogoServicios />} />
+        <Route path="inventario-componentes" element={<AdminInventarioComponentes />} />
+        <Route path="solicitudes-cambio" element={<AdminSolicitudesCambio />} />
         <Route path="gestion-usuarios" element={<AdminUsuarios />} />
         <Route path="tickets" element={<AdminTickets />} />
         <Route path="tickets/:id" element={<AdminTicketDetalle />} />

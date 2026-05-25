@@ -1,4 +1,4 @@
-﻿import { Boxes, Building2, ClipboardList, ListChecks, UsersRound } from "lucide-react";
+﻿import { Boxes, Building2, ClipboardList, FileCheck, ListChecks, Package, UsersRound } from "lucide-react";
 import type { SidebarNavGroup } from "../../components/layout/Sidebar";
 
 export type AdminView =
@@ -6,6 +6,8 @@ export type AdminView =
   | "gestion-infraestructura"
   | "catalogo-ci"
   | "catalogo-servicios"
+  | "inventario-componentes"
+  | "solicitudes-cambio"
   | "gestion-usuarios";
 
 export const adminSidebarGroups: SidebarNavGroup[] = [
@@ -16,6 +18,8 @@ export const adminSidebarGroups: SidebarNavGroup[] = [
       { id: "gestion-infraestructura", label: "Gestion de Infraestructura", icon: Building2 },
       { id: "catalogo-ci", label: "Catalogo de CIs", icon: Boxes },
       { id: "catalogo-servicios", label: "Catalogo de servicios", icon: ListChecks },
+      { id: "inventario-componentes", label: "Inventario componentes", icon: Package },
+      { id: "solicitudes-cambio", label: "Solicitudes RFC", icon: FileCheck },
       { id: "gestion-usuarios", label: "Gestion de Usuarios", icon: UsersRound },
     ],
   },
@@ -31,6 +35,10 @@ export function adminPathForView(view: AdminView) {
       return "/admin/catalogo-ci";
     case "catalogo-servicios":
       return "/admin/catalogo-servicios";
+    case "inventario-componentes":
+      return "/admin/inventario-componentes";
+    case "solicitudes-cambio":
+      return "/admin/solicitudes-cambio";
     case "gestion-usuarios":
       return "/admin/gestion-usuarios";
     default:
@@ -43,6 +51,8 @@ export function adminViewFromPath(pathname: string): AdminView {
   if (pathname.endsWith("/gestion-infraestructura")) return "gestion-infraestructura";
   if (pathname.endsWith("/catalogo-ci")) return "catalogo-ci";
   if (pathname.endsWith("/catalogo-servicios")) return "catalogo-servicios";
+  if (pathname.endsWith("/inventario-componentes")) return "inventario-componentes";
+  if (pathname.endsWith("/solicitudes-cambio")) return "solicitudes-cambio";
   if (pathname.endsWith("/gestion-usuarios")) return "gestion-usuarios";
   return "bandeja-entrada";
 }

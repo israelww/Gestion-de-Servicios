@@ -53,11 +53,20 @@ type HistorialCambioCI = {
   id_ci: string;
   id_mantenimiento: string | null;
   fecha_cambio: string;
+  numero_rfc?: string | null;
   numero_transaccion: string | null;
   origen_transaccion: string | null;
   tecnico: string;
   detalle_cambio: string;
   fecha_registro: string;
+};
+
+type ComponenteAsignadoCI = {
+  id_componente: string;
+  nombre: string;
+  cantidad_stock: number;
+  precio_unitario: number | string;
+  unidad: string | null;
 };
 
 const DESKTOP_TIPO_CI_ID = "T04";
@@ -280,6 +289,8 @@ export default function AdminActivos() {
   const [selectedCiHistorial, setSelectedCiHistorial] = useState<InventarioCI | null>(null);
   const [historialCambios, setHistorialCambios] = useState<HistorialCambioCI[]>([]);
   const [historialLoading, setHistorialLoading] = useState(false);
+  const [componentesAsignados, setComponentesAsignados] = useState<ComponenteAsignadoCI[]>([]);
+  const [componentesAsignadosLoading, setComponentesAsignadosLoading] = useState(false);
   const [creatingPreventivo, setCreatingPreventivo] = useState(false);
   const [preventivoDescripcion, setPreventivoDescripcion] = useState("");
   const [inventoryQuery, setInventoryQuery] = useState("");
@@ -582,18 +593,35 @@ export default function AdminActivos() {
     }
   };
 
+  const loadComponentesAsignados = async (idCi: string) => {
+    setComponentesAsignadosLoading(true);
+    try {
+      const response = await axios.get<ComponenteAsignadoCI[]>(
+        `${API_BASE_URL}/ci/${cleanId(idCi)}/componentes-inventario`,
+        { headers: headers() }
+      );
+      setComponentesAsignados(response.data || []);
+    } catch {
+      setComponentesAsignados([]);
+    } finally {
+      setComponentesAsignadosLoading(false);
+    }
+  };
+
   const openHistorialModal = async (item: InventarioCI) => {
     setSelectedCiHistorial(item);
     setHistorialCambios([]);
+    setComponentesAsignados([]);
     setPreventivoDescripcion("");
     setStatusMessage("");
     setErrorMessage("");
-    await loadHistorialCambios(item.id_ci);
+    await Promise.all([loadHistorialCambios(item.id_ci), loadComponentesAsignados(item.id_ci)]);
   };
 
   const closeHistorialModal = () => {
     setSelectedCiHistorial(null);
     setHistorialCambios([]);
+    setComponentesAsignados([]);
     setPreventivoDescripcion("");
   };
 
@@ -1057,6 +1085,42 @@ export default function AdminActivos() {
 
                   <div className="modal-grid-responsive">
                     <section className="modal-history-section">
+                      <div className="mb-4">
+                        <div className="mb-2 flex items-center justify-between">
+                          <h4 className="text-base font-semibold text-slate-900">Componentes asignados</h4>
+                          {componentesAsignadosLoading ? (
+                            <span className="text-xs text-slate-500">Cargando...</span>
+                          ) : null}
+                        </div>
+                        {!componentesAsignados.length && !componentesAsignadosLoading ? (
+                          <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                            Sin componentes dedicados a este CI.
+                          </p>
+                        ) : null}
+                        {componentesAsignados.length ? (
+                          <div className="overflow-auto rounded-lg border border-slate-200">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-slate-100 uppercase text-slate-500">
+                                <tr>
+                                  <th className="px-2 py-1.5">Nombre</th>
+                                  <th className="px-2 py-1.5">Stock</th>
+                                  <th className="px-2 py-1.5">Precio</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 bg-white">
+                                {componentesAsignados.map((c) => (
+                                  <tr key={c.id_componente}>
+                                    <td className="px-2 py-1.5">{c.nombre}</td>
+                                    <td className="px-2 py-1.5">{c.cantidad_stock}</td>
+                                    <td className="px-2 py-1.5">${Number(c.precio_unitario).toFixed(2)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : null}
+                      </div>
+
                       <div className="mb-3 flex items-center justify-between">
                         <h4 className="text-base font-semibold text-slate-900">Cambios Registrados</h4>
                         {historialLoading ? <span className="text-xs text-slate-500">Cargando...</span> : null}
@@ -1074,7 +1138,7 @@ export default function AdminActivos() {
                             <thead className="bg-slate-100 text-xs uppercase text-slate-500">
                               <tr>
                                 <th className="px-3 py-2">Fecha</th>
-                                <th className="px-3 py-2">Transaccion</th>
+                                <th className="px-3 py-2">RFC</th>
                                 <th className="px-3 py-2">Tecnico</th>
                                 <th className="px-3 py-2">Detalle</th>
                               </tr>
@@ -1085,11 +1149,11 @@ export default function AdminActivos() {
                                   <td className="px-3 py-2 align-top">{formatDateTime(cambio.fecha_cambio)}</td>
                                   <td className="px-3 py-2 align-top">
                                     <div className="font-medium text-slate-800">
-                                      {cambio.numero_transaccion || "Sin numero"}
+                                      {cambio.numero_rfc || cambio.numero_transaccion || "—"}
                                     </div>
-                                    <div className="text-xs text-slate-500">
-                                      {cambio.origen_transaccion || "Sin origen"}
-                                    </div>
+                                    {cambio.origen_transaccion ? (
+                                      <div className="text-xs text-slate-500">{cambio.origen_transaccion}</div>
+                                    ) : null}
                                   </td>
                                   <td className="px-3 py-2 align-top">{cambio.tecnico}</td>
                                   <td className="px-3 py-2 align-top">{cambio.detalle_cambio}</td>
