@@ -92,6 +92,12 @@ type DesktopHardwareSpecs = {
   interno: DesktopHardwareInterno;
 };
 
+type DesktopProfileOption = {
+  id: string;
+  nombre: string;
+  specs: DesktopHardwareInterno;
+};
+
 const emptyDesktopHardwareSpecs = (): DesktopHardwareSpecs => ({
   interno: {
     procesador: "",
@@ -134,6 +140,58 @@ const DESKTOP_HW_INTERNO_FIELDS: { key: keyof DesktopHardwareInterno; label: str
   { key: "refrigeracion", label: "Refrigeracion" },
   { key: "redCableada", label: "Red (cableada / NIC)" },
 ];
+
+const DESKTOP_PROFILE_OPTIONS: DesktopProfileOption[] = [
+  {
+    id: "lab-basica-i5",
+    nombre: "Laboratorio Basica (Core i5)",
+    specs: {
+      procesador: "Intel Core i5 12400",
+      placaMadre: "B660 mATX",
+      ram: "16 GB DDR4",
+      almacenamientoPrincipal: "SSD NVMe 512 GB",
+      almacenamientoSecundario: "HDD 1 TB",
+      gpu: "Integrada Intel UHD 730",
+      fuentePoder: "550W 80+ Bronze",
+      gabinete: "Micro-ATX ventilado",
+      refrigeracion: "Disipador stock Intel",
+      redCableada: "Gigabit Ethernet integrada",
+    },
+  },
+  {
+    id: "lab-media-ryzen5",
+    nombre: "Laboratorio Media (Ryzen 5)",
+    specs: {
+      procesador: "AMD Ryzen 5 5600G",
+      placaMadre: "B550 mATX",
+      ram: "16 GB DDR4 3200 MHz",
+      almacenamientoPrincipal: "SSD NVMe 1 TB",
+      almacenamientoSecundario: "Sin secundario",
+      gpu: "Integrada Radeon Vega 7",
+      fuentePoder: "600W 80+ Bronze",
+      gabinete: "ATX flujo de aire",
+      refrigeracion: "Disipador torre 120 mm",
+      redCableada: "Gigabit Ethernet PCIe",
+    },
+  },
+  {
+    id: "lab-alto-i7",
+    nombre: "Laboratorio Alto Rendimiento (Core i7)",
+    specs: {
+      procesador: "Intel Core i7 12700",
+      placaMadre: "Z690 ATX",
+      ram: "32 GB DDR4",
+      almacenamientoPrincipal: "SSD NVMe 1 TB Gen4",
+      almacenamientoSecundario: "SSD SATA 1 TB",
+      gpu: "NVIDIA RTX 4060 8 GB",
+      fuentePoder: "750W 80+ Gold",
+      gabinete: "ATX alto flujo",
+      refrigeracion: "AIO 240 mm",
+      redCableada: "2.5GbE integrada",
+    },
+  },
+];
+const CREATE_NEW_PROFILE_ID = "__create_new_profile__";
 
 const initialBuilding = { id_edificio: "", nombre_edificio: "", descripcion_edificio: "" };
 const initialSub = { id_edificio: "", nombre_sublocalizacion: "", codigo_area: "" };
@@ -281,6 +339,11 @@ export default function AdminActivos() {
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
   const [ciForm, setCiForm] = useState(initialCi);
   const [hardwareSpecs, setHardwareSpecs] = useState<DesktopHardwareSpecs>(() => emptyDesktopHardwareSpecs());
+  const [selectedDesktopProfile, setSelectedDesktopProfile] = useState("");
+  const [customDesktopProfiles, setCustomDesktopProfiles] = useState<DesktopProfileOption[]>([]);
+  const [showCreateDesktopProfileModal, setShowCreateDesktopProfileModal] = useState(false);
+  const [newDesktopProfileName, setNewDesktopProfileName] = useState("");
+  const [newDesktopProfileSpecs, setNewDesktopProfileSpecs] = useState<DesktopHardwareSpecs>(() => emptyDesktopHardwareSpecs());
   const [editingCiId, setEditingCiId] = useState<string | null>(null);
   const [edificios, setEdificios] = useState<Edificio[]>([]);
   const [sublocalizaciones, setSublocalizaciones] = useState<Sublocalizacion[]>([]);
@@ -344,6 +407,10 @@ export default function AdminActivos() {
   const displayCiId = editingCiId ?? generatedCiId;
   const isEditingCi = Boolean(editingCiId);
   const isDesktopCi = isDesktopTipoCiId(ciForm.id_tipo_ci);
+  const desktopProfileOptions = useMemo(
+    () => [...DESKTOP_PROFILE_OPTIONS, ...customDesktopProfiles],
+    [customDesktopProfiles]
+  );
 
   const inventoryRows = inventario.filter((item) => {
     if (filterBuilding && item.nombre_edificio !== filterBuilding) return false;
@@ -562,6 +629,7 @@ export default function AdminActivos() {
       }
       setCiForm(initialCi);
       setHardwareSpecs(emptyDesktopHardwareSpecs());
+      setSelectedDesktopProfile("");
       setEditingCiId(null);
       await reload();
     } catch (error) {
@@ -644,8 +712,45 @@ export default function AdminActivos() {
     } else {
       setHardwareSpecs(emptyDesktopHardwareSpecs());
     }
+    setSelectedDesktopProfile("");
     setEditingCiId(cleanId(item.id_ci));
     setStatusMessage("");
+    setErrorMessage("");
+  };
+
+  const resetCreateDesktopProfileModal = () => {
+    setShowCreateDesktopProfileModal(false);
+    setNewDesktopProfileName("");
+    setNewDesktopProfileSpecs(emptyDesktopHardwareSpecs());
+  };
+
+  const saveNewDesktopProfile = () => {
+    const trimmedName = newDesktopProfileName.trim();
+    if (!trimmedName) {
+      setErrorMessage("Escribe el nombre del nuevo tipo de computadora armada.");
+      return;
+    }
+
+    const slug = trimmedName
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 32) || "perfil";
+
+    const uniqueId = `custom-${slug}-${Date.now()}`;
+    const newProfile: DesktopProfileOption = {
+      id: uniqueId,
+      nombre: trimmedName,
+      specs: { ...newDesktopProfileSpecs.interno },
+    };
+
+    setCustomDesktopProfiles((prev) => [...prev, newProfile]);
+    setSelectedDesktopProfile(uniqueId);
+    setHardwareSpecs({ interno: { ...newProfile.specs } });
+    resetCreateDesktopProfileModal();
+    setStatusMessage(`Tipo de computadora "${trimmedName}" creado correctamente.`);
     setErrorMessage("");
   };
 
@@ -861,7 +966,7 @@ export default function AdminActivos() {
                   </div>
                   <form className="mt-6 space-y-5" onSubmit={submitCi}>
                     <div className="grid gap-5 xl:grid-cols-2">
-                      <label><Label>Tipo de CI</Label><div className="relative"><Wrench className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><select value={ciForm.id_tipo_ci ? trimTipoCiId(ciForm.id_tipo_ci) : ""} onChange={(e) => { const v = e.target.value; setCiForm((p) => ({ ...p, id_tipo_ci: v })); if (!isDesktopTipoCiId(v)) setHardwareSpecs(emptyDesktopHardwareSpecs()); }} className={`${inputClass(isEditingCi)} pl-12`} disabled={isEditingCi} required><option value="">Selecciona un tipo</option>{catalogos.tipos_ci.map((item) => <option key={trimTipoCiId(item.id_tipo_ci)} value={trimTipoCiId(item.id_tipo_ci)}>{item.nombre_tipo}</option>)}</select></div></label>
+                      <label><Label>Tipo de CI</Label><div className="relative"><Wrench className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><select value={ciForm.id_tipo_ci ? trimTipoCiId(ciForm.id_tipo_ci) : ""} onChange={(e) => { const v = e.target.value; setCiForm((p) => ({ ...p, id_tipo_ci: v })); if (!isDesktopTipoCiId(v)) { setHardwareSpecs(emptyDesktopHardwareSpecs()); setSelectedDesktopProfile(""); } }} className={`${inputClass(isEditingCi)} pl-12`} disabled={isEditingCi} required><option value="">Selecciona un tipo</option>{catalogos.tipos_ci.map((item) => <option key={trimTipoCiId(item.id_tipo_ci)} value={trimTipoCiId(item.id_tipo_ci)}>{item.nombre_tipo}</option>)}</select></div></label>
                       <label><Label>Edificio</Label><select value={ciForm.id_edificio} onChange={(e) => setCiForm((p) => ({ ...p, id_edificio: e.target.value }))} className={inputClass(isEditingCi)} disabled={isEditingCi} required><option value="">Selecciona un edificio</option>{catalogos.edificios.map((item) => <option key={item.id_edificio} value={item.id_edificio}>{item.nombre_edificio}</option>)}</select></label>
                     </div>
                     <div className="grid gap-5 xl:grid-cols-2">
@@ -889,6 +994,32 @@ export default function AdminActivos() {
                         <h4 className="text-sm font-bold uppercase tracking-wide text-[#001f3f]">
                           Componentes internos (computadora de escritorio)
                         </h4>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Tipo de computadora armada
+                          <select
+                            className={`${inputClass()} mt-1`}
+                            value={selectedDesktopProfile}
+                            onChange={(e) => {
+                              const profileId = e.target.value;
+                              if (profileId === CREATE_NEW_PROFILE_ID) {
+                                setShowCreateDesktopProfileModal(true);
+                                return;
+                              }
+                              setSelectedDesktopProfile(profileId);
+                              const selected = desktopProfileOptions.find((p) => p.id === profileId);
+                              if (!selected) return;
+                              setHardwareSpecs({ interno: { ...selected.specs } });
+                            }}
+                          >
+                            <option value="">Selecciona una configuracion prearmada</option>
+                            {desktopProfileOptions.map((profile) => (
+                              <option key={profile.id} value={profile.id}>
+                                {profile.nombre}
+                              </option>
+                            ))}
+                            <option value={CREATE_NEW_PROFILE_ID}>+ Crear nuevo tipo...</option>
+                          </select>
+                        </label>
                         <div className="grid gap-4 md:grid-cols-2">
                           {DESKTOP_HW_INTERNO_FIELDS.map(({ key, label }) => (
                             <label key={key} className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -920,6 +1051,7 @@ export default function AdminActivos() {
                           onClick={() => {
                             setCiForm(initialCi);
                             setHardwareSpecs(emptyDesktopHardwareSpecs());
+                            setSelectedDesktopProfile("");
                             setEditingCiId(null);
                             setStatusMessage("");
                             setErrorMessage("");
@@ -1195,6 +1327,71 @@ export default function AdminActivos() {
                         </button>
                       </form>
                     </section>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {showCreateDesktopProfileModal ? (
+              <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/55 p-4">
+                <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-900">Nuevo tipo de computadora armada</h3>
+                      <p className="mt-1 text-sm text-slate-600">Define el nombre y componentes base para reutilizar este perfil.</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                      onClick={resetCreateDesktopProfileModal}
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Nombre del tipo
+                      <input
+                        className={`${inputClass()} mt-1`}
+                        value={newDesktopProfileName}
+                        onChange={(e) => setNewDesktopProfileName(e.target.value)}
+                        placeholder="Ej. Laboratorio Desarrollo Web"
+                      />
+                    </label>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {DESKTOP_HW_INTERNO_FIELDS.map(({ key, label }) => (
+                        <label key={key} className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          {label}
+                          <input
+                            className={`${inputClass()} mt-1`}
+                            value={newDesktopProfileSpecs.interno[key]}
+                            onChange={(e) =>
+                              setNewDesktopProfileSpecs((s) => ({
+                                ...s,
+                                interno: { ...s.interno, [key]: e.target.value },
+                              }))
+                            }
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={saveNewDesktopProfile}
+                        className="rounded-xl bg-[#001f3f] px-6 py-3 text-sm font-bold text-white hover:bg-blue-800"
+                      >
+                        Guardar tipo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetCreateDesktopProfileModal}
+                        className="rounded-xl border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
