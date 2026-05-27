@@ -220,8 +220,8 @@ body {
 
 /* Modal Responsive Container - Fluido y completo control de espaciado */
 .modal-content-wrapper {
-  width: 90%;
-  max-width: 1200px;
+  width: 94%;
+  max-width: 1400px;
   max-height: 90vh;
   border-radius: 1rem;
   background-color: #ffffff;
@@ -242,7 +242,7 @@ body {
 /* Modal Responsive Grid - 2 column symmetric layout on desktop, vertical on mobile */
 .modal-grid-responsive {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.75rem;
   grid-template-columns: 1fr 1fr;
   box-sizing: border-box;
   padding: 1.5rem;

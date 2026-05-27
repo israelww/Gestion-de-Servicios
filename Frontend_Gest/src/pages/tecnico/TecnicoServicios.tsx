@@ -54,6 +54,7 @@ type HistorialCambioCI = {
   origen_transaccion: string | null;
   tecnico: string;
   detalle_cambio: string;
+  componentes_cambio?: string;
   fecha_registro: string;
 };
 
@@ -63,6 +64,13 @@ type ComponenteInventario = {
   cantidad_stock: number;
   precio_unitario: number | string;
   unidad: string | null;
+  id_ci?: string | null;
+};
+
+type ComponenteAsignadoCI = {
+  id_componente: string;
+  nombre: string;
+  descripcion?: string | null;
   id_ci?: string | null;
 };
 
@@ -87,7 +95,11 @@ type ConocimientoKedb = {
   fecha_registro: string;
 };
 
-type LineaSolicitud = { id_componente: string; cantidad: number };
+type LineaSolicitud = {
+  id_componente_ci: string;
+  id_componente_inventario: string;
+  cantidad: number;
+};
 
 const MONTO_LIMITE_INSTITUCION = 1000;
 
@@ -114,7 +126,11 @@ const initialHistoryForm = {
   detalle_cambio: "",
 };
 
-const initialLinea = (): LineaSolicitud => ({ id_componente: "", cantidad: 1 });
+const initialLinea = (): LineaSolicitud => ({
+  id_componente_ci: "",
+  id_componente_inventario: "",
+  cantidad: 1,
+});
 
 const headers = () => {
   const token = getToken();
@@ -143,6 +159,25 @@ const formatDate = (value: string) => {
   }).format(date);
 };
 
+const splitCambioComponentes = (value?: string) => {
+  const text = value?.trim();
+  if (!text) return { componente: "—", reemplazo: "—" };
+  const pares = text.split(/\s*,\s*/).filter(Boolean);
+  const componentes: string[] = [];
+  const reemplazos: string[] = [];
+
+  for (const par of pares) {
+    const [origen, nuevo] = par.split(/\s*->\s*/);
+    componentes.push(origen?.trim() || "—");
+    reemplazos.push(nuevo?.trim() || "—");
+  }
+
+  return {
+    componente: componentes.join(", "),
+    reemplazo: reemplazos.join(", "),
+  };
+};
+
 const inputClass = (disabled = false) =>
   `w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-transparent focus:ring-2 focus:ring-blue-900 ${
     disabled ? "cursor-not-allowed bg-slate-100" : "bg-white"
@@ -158,6 +193,7 @@ export default function TecnicoServicios() {
   const [historialLoading, setHistorialLoading] = useState(false);
   const [historialSubmitting, setHistorialSubmitting] = useState(false);
   const [historyForm, setHistoryForm] = useState(initialHistoryForm);
+  const [componentesAsignadosCi, setComponentesAsignadosCi] = useState<ComponenteAsignadoCI[]>([]);
   const [componentesInventario, setComponentesInventario] = useState<ComponenteInventario[]>([]);
   const [lineasSolicitud, setLineasSolicitud] = useState<LineaSolicitud[]>([initialLinea()]);
   const [solicitudesCambio, setSolicitudesCambio] = useState<SolicitudCambioRow[]>([]);
@@ -287,6 +323,20 @@ export default function TecnicoServicios() {
     }
   };
 
+  const loadComponentesAsignadosCi = async (idCi: string) => {
+    try {
+      const response = await axios.get<ComponenteAsignadoCI[]>(
+        `${API_BASE_URL}/ci/${idCi.trim()}/componentes-inventario`,
+        {
+          headers: headers(),
+        }
+      );
+      setComponentesAsignadosCi(response.data || []);
+    } catch {
+      setComponentesAsignadosCi([]);
+    }
+  };
+
   const componenteOptionLabel = (c: ComponenteInventario) => {
     const base = `${c.nombre} (stock: ${c.cantidad_stock}) — $${Number(c.precio_unitario).toFixed(2)}`;
     if (c.id_ci?.trim()) return `${base} · asignado a este CI`;
@@ -298,12 +348,14 @@ export default function TecnicoServicios() {
     setHistoryForm(initialHistoryForm);
     setLineasSolicitud([initialLinea()]);
     setHistorialCambios([]);
+    setComponentesAsignadosCi([]);
     setSolicitudesCambio([]);
     setStatusMessage("");
     setErrorMessage("");
     await Promise.all([
       loadHistorial(item.id_ci),
       loadSolicitudes(item.id_ci),
+      loadComponentesAsignadosCi(item.id_ci),
       loadComponentesInventario(item.id_ci),
     ]);
   };
@@ -311,19 +363,24 @@ export default function TecnicoServicios() {
   const closeHistorialModal = () => {
     setSelectedServicio(null);
     setHistorialCambios([]);
+    setComponentesAsignadosCi([]);
     setSolicitudesCambio([]);
     setHistoryForm(initialHistoryForm);
     setLineasSolicitud([initialLinea()]);
   };
 
   const montoEstimadoSolicitud = lineasSolicitud.reduce((sum, linea) => {
-    const comp = componentesInventario.find((c) => c.id_componente === linea.id_componente);
+    const comp = componentesInventario.find(
+      (c) => c.id_componente === linea.id_componente_inventario
+    );
     if (!comp || !linea.cantidad) return sum;
     return sum + Number(comp.precio_unitario) * linea.cantidad;
   }, 0);
 
   const requiereInstitucionEstimado = lineasSolicitud.some((linea) => {
-    const comp = componentesInventario.find((c) => c.id_componente === linea.id_componente);
+    const comp = componentesInventario.find(
+      (c) => c.id_componente === linea.id_componente_inventario
+    );
     return comp && Number(comp.precio_unitario) >= MONTO_LIMITE_INSTITUCION;
   });
 
@@ -331,9 +388,11 @@ export default function TecnicoServicios() {
     event.preventDefault();
     if (!selectedServicio) return;
 
-    const lineas = lineasSolicitud.filter((l) => l.id_componente && l.cantidad > 0);
+    const lineas = lineasSolicitud.filter(
+      (l) => l.id_componente_ci && l.id_componente_inventario && l.cantidad > 0
+    );
     if (!lineas.length) {
-      setErrorMessage("Agregue al menos un componente con cantidad.");
+      setErrorMessage("Seleccione componente actual, reemplazo y cantidad en al menos una linea.");
       return;
     }
 
@@ -351,7 +410,11 @@ export default function TecnicoServicios() {
         {
           id_mantenimiento: selectedServicio.id_reporte,
           detalle_cambio: historyForm.detalle_cambio,
-          lineas: lineas.map((l) => ({ id_componente: l.id_componente, cantidad: l.cantidad })),
+          lineas: lineas.map((l) => ({
+            id_componente_origen: l.id_componente_ci,
+            id_componente: l.id_componente_inventario,
+            cantidad: l.cantidad,
+          })),
         },
         { headers: headers() }
       );
@@ -696,19 +759,29 @@ export default function TecnicoServicios() {
                         <tr>
                           <th className="px-3 py-2">Fecha</th>
                           <th className="px-3 py-2">RFC</th>
+                          <th className="px-3 py-2">Componente</th>
+                          <th className="px-3 py-2">Reemplazo</th>
                           <th className="px-3 py-2">Detalle</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 bg-white">
-                        {historialCambios.map((cambio) => (
+                        {historialCambios.map((cambio) => {
+                          const compCambio = splitCambioComponentes(cambio.componentes_cambio);
+                          return (
                           <tr key={cambio.id_historial}>
                             <td className="px-3 py-2 align-top">{formatDate(cambio.fecha_cambio)}</td>
                             <td className="px-3 py-2 align-top font-medium text-slate-800">
                               {cambio.numero_rfc || cambio.numero_transaccion || "—"}
                             </td>
+                            <td className="px-3 py-2 align-top whitespace-normal">
+                              {compCambio.componente}
+                            </td>
+                            <td className="px-3 py-2 align-top whitespace-normal">
+                              {compCambio.reemplazo}
+                            </td>
                             <td className="px-3 py-2 align-top">{cambio.detalle_cambio}</td>
                           </tr>
-                        ))}
+                        )})}
                       </tbody>
                     </table>
                   </div>
@@ -738,7 +811,7 @@ export default function TecnicoServicios() {
                   <div>
                     <div className="mb-2 flex items-center justify-between">
                       <span className="text-xs font-semibold uppercase tracking-wide text-gray-700">
-                        Componentes del inventario
+                        Componentes a reemplazar
                       </span>
                       <button
                         type="button"
@@ -749,21 +822,52 @@ export default function TecnicoServicios() {
                       </button>
                     </div>
                     <div className="space-y-2">
+                      {!componentesAsignadosCi.length ? (
+                        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                          Este CI no tiene componentes asignados actualmente.
+                        </p>
+                      ) : null}
                       {lineasSolicitud.map((linea, idx) => (
-                        <div key={idx} className="grid grid-cols-[1fr_80px_32px] gap-2">
+                        <div key={idx} className="grid grid-cols-[1fr_1fr_80px_32px] gap-2">
                           <select
                             className={inputClass()}
-                            value={linea.id_componente}
+                            value={linea.id_componente_ci}
                             onChange={(e) =>
                               setLineasSolicitud((prev) =>
                                 prev.map((l, i) =>
-                                  i === idx ? { ...l, id_componente: e.target.value } : l
+                                  i === idx
+                                    ? {
+                                        ...l,
+                                        id_componente_ci: e.target.value,
+                                        id_componente_inventario: "",
+                                      }
+                                    : l
                                 )
                               )
                             }
                             required
                           >
-                            <option value="">Seleccione componente</option>
+                            <option value="">Componente actual del CI</option>
+                            {componentesAsignadosCi.map((c) => (
+                              <option key={c.id_componente} value={c.id_componente}>
+                                {c.nombre}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            className={inputClass(!linea.id_componente_ci)}
+                            value={linea.id_componente_inventario}
+                            onChange={(e) =>
+                              setLineasSolicitud((prev) =>
+                                prev.map((l, i) =>
+                                  i === idx ? { ...l, id_componente_inventario: e.target.value } : l
+                                )
+                              )
+                            }
+                            disabled={!linea.id_componente_ci}
+                            required
+                          >
+                            <option value="">Repuesto disponible en inventario</option>
                             {componentesInventario.map((c) => (
                               <option key={c.id_componente} value={c.id_componente}>
                                 {componenteOptionLabel(c)}

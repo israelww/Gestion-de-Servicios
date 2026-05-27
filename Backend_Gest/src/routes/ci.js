@@ -329,9 +329,32 @@ router.get('/ci/:id_ci/historial-cambios', ...requireAdminOrTecnico, async (req,
       .query(`
         SELECT
           id_historial, id_ci, id_mantenimiento, id_solicitud, numero_rfc,
-          fecha_cambio, numero_transaccion, origen_transaccion, tecnico, detalle_cambio, fecha_registro
-        FROM Historial_Cambios_CI
-        WHERE id_ci = @id_ci
+          fecha_cambio, numero_transaccion, origen_transaccion, tecnico, detalle_cambio, fecha_registro,
+          ISNULL(comp.componentes_cambio, '') AS componentes_cambio
+        FROM Historial_Cambios_CI h
+        OUTER APPLY (
+          SELECT STRING_AGG(
+            CONCAT(
+              ISNULL(c_origen.nombre, 'Componente anterior'),
+              ' (',
+              ISNULL(d.id_componente_origen, 'N/D'),
+              ')',
+              ' -> ',
+              c.nombre,
+              ' (',
+              d.id_componente,
+              ')',
+              ' x',
+              CAST(d.cantidad AS VARCHAR(10))
+            ),
+            ', '
+          ) AS componentes_cambio
+          FROM Solicitud_Cambio_Detalle d
+          JOIN Componentes_Inventario c ON c.id_componente = d.id_componente
+          LEFT JOIN Componentes_Inventario c_origen ON c_origen.id_componente = d.id_componente_origen
+          WHERE d.id_solicitud = h.id_solicitud
+        ) comp
+        WHERE h.id_ci = @id_ci
         ORDER BY fecha_cambio DESC, id_historial DESC
       `)
     return res.status(200).json(result.recordset)

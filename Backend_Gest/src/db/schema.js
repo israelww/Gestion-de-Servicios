@@ -542,8 +542,6 @@ async function ensureItilProblemsSchema(pool) {
 // ─── ensureInventarioSchema ───────────────────────────────────────────────────
 
 async function ensureInventarioSchema(pool) {
-  if (inventarioSchemaReady) return
-
   await ensureCiHistoryTable(pool)
 
   await pool.request().query(`
@@ -552,18 +550,68 @@ async function ensureInventarioSchema(pool) {
       CREATE TABLE Componentes_Inventario (
         id_componente CHAR(10) NOT NULL,
         nombre VARCHAR(150) NOT NULL,
+        numero_serie VARCHAR(80) NULL,
         descripcion VARCHAR(500) NULL,
         cantidad_stock INT NOT NULL CONSTRAINT DF_Componentes_stock DEFAULT 0,
         precio_unitario DECIMAL(10, 2) NOT NULL,
         unidad VARCHAR(20) NULL,
         activo BIT NOT NULL CONSTRAINT DF_Componentes_activo DEFAULT 1,
         id_ci VARCHAR(50) NULL,
+        fecha_registro DATETIME NOT NULL CONSTRAINT DF_Componentes_fecha_registro DEFAULT GETDATE(),
         CONSTRAINT PK_Componentes_Inventario PRIMARY KEY (id_componente)
       );
     END;
 
     IF COL_LENGTH('Componentes_Inventario', 'id_ci') IS NULL
       ALTER TABLE Componentes_Inventario ADD id_ci VARCHAR(50) NULL;
+    IF COL_LENGTH('Componentes_Inventario', 'numero_serie') IS NULL
+      ALTER TABLE Componentes_Inventario ADD numero_serie VARCHAR(80) NULL;
+    IF COL_LENGTH('Componentes_Inventario', 'fecha_registro') IS NULL
+      ALTER TABLE Componentes_Inventario ADD fecha_registro DATETIME NULL;
+
+    IF COL_LENGTH('Componentes_Inventario', 'fecha_registro') IS NOT NULL
+    BEGIN
+      EXEC('UPDATE Componentes_Inventario
+            SET fecha_registro = GETDATE()
+            WHERE fecha_registro IS NULL;');
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM sys.default_constraints
+        WHERE parent_object_id = OBJECT_ID('Componentes_Inventario')
+          AND parent_column_id = COLUMNPROPERTY(OBJECT_ID('Componentes_Inventario'),'fecha_registro','ColumnId')
+      )
+      BEGIN
+        EXEC('ALTER TABLE Componentes_Inventario
+              ADD CONSTRAINT DF_Componentes_fecha_registro DEFAULT GETDATE() FOR fecha_registro;');
+      END;
+    END;
+
+    -- Migracion: componentes antiguos sin numero de serie
+    -- Se asigna un serial deterministico por componente para mantener unicidad.
+    UPDATE Componentes_Inventario
+    SET numero_serie = CONCAT('SN-', RTRIM(id_componente))
+    WHERE numero_serie IS NULL
+      OR LTRIM(RTRIM(numero_serie)) = '';
+
+    -- Migracion: normalizar stock al nuevo modelo por pieza serial.
+    -- Cada registro representa un componente fisico, por lo que su stock debe ser 1.
+    UPDATE Componentes_Inventario
+    SET cantidad_stock = 1
+    WHERE cantidad_stock IS NULL OR cantidad_stock <> 1;
+
+    IF COL_LENGTH('Componentes_Inventario', 'numero_serie') IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1
+      FROM sys.indexes
+      WHERE name = 'UX_Componentes_NumeroSerie'
+        AND object_id = OBJECT_ID('Componentes_Inventario')
+    )
+    BEGIN
+      EXEC('CREATE UNIQUE INDEX UX_Componentes_NumeroSerie
+            ON Componentes_Inventario(numero_serie)
+            WHERE numero_serie IS NOT NULL;');
+    END;
 
     IF NOT EXISTS (
       SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_Componentes_CI'
@@ -605,12 +653,28 @@ async function ensureInventarioSchema(pool) {
       CREATE TABLE Solicitud_Cambio_Detalle (
         id_detalle INT IDENTITY(1,1) PRIMARY KEY,
         id_solicitud CHAR(12) NOT NULL,
+        id_componente_origen CHAR(10) NULL,
         id_componente CHAR(10) NOT NULL,
         cantidad INT NOT NULL,
         precio_unitario DECIMAL(10, 2) NOT NULL,
         CONSTRAINT FK_SolicitudDetalle_Solicitud FOREIGN KEY (id_solicitud) REFERENCES Solicitud_Cambio_Componente(id_solicitud),
-        CONSTRAINT FK_SolicitudDetalle_Componente FOREIGN KEY (id_componente) REFERENCES Componentes_Inventario(id_componente)
+        CONSTRAINT FK_SolicitudDetalle_Componente FOREIGN KEY (id_componente) REFERENCES Componentes_Inventario(id_componente),
+        CONSTRAINT FK_SolicitudDetalle_ComponenteOrigen FOREIGN KEY (id_componente_origen) REFERENCES Componentes_Inventario(id_componente)
       );
+    END;
+
+    IF COL_LENGTH('Solicitud_Cambio_Detalle', 'id_componente_origen') IS NULL
+      ALTER TABLE Solicitud_Cambio_Detalle ADD id_componente_origen CHAR(10) NULL;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_SolicitudDetalle_ComponenteOrigen'
+    )
+    AND OBJECT_ID('Solicitud_Cambio_Detalle', 'U') IS NOT NULL
+    AND OBJECT_ID('Componentes_Inventario', 'U') IS NOT NULL
+    BEGIN
+      ALTER TABLE Solicitud_Cambio_Detalle
+      ADD CONSTRAINT FK_SolicitudDetalle_ComponenteOrigen
+      FOREIGN KEY (id_componente_origen) REFERENCES Componentes_Inventario(id_componente);
     END;
 
     IF NOT EXISTS (

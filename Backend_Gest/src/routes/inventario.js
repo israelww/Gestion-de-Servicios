@@ -36,21 +36,28 @@ function parseIdCiOptional(value) {
   return toTrimmedString(value) || null
 }
 
-const COMPONENTES_SELECT_ADMIN = `
-  SELECT
-    c.id_componente,
-    c.nombre,
-    c.descripcion,
-    c.cantidad_stock,
-    c.precio_unitario,
-    c.unidad,
-    c.activo,
-    c.id_ci,
-    ci.nombre_equipo,
-    ci.numero_serie AS ci_numero_serie
-  FROM Componentes_Inventario c
-  LEFT JOIN Elementos_Configuracion ci ON ci.id_ci = c.id_ci
-`
+async function getComponentesSelectAdmin(pool) {
+  const meta = await pool.request().query(`
+    SELECT CASE WHEN COL_LENGTH('Componentes_Inventario', 'numero_serie') IS NULL THEN 0 ELSE 1 END AS has_numero_serie
+  `)
+  const hasNumeroSerie = Number(meta.recordset?.[0]?.has_numero_serie) === 1
+  return `
+    SELECT
+      c.id_componente,
+      c.nombre,
+      ${hasNumeroSerie ? 'c.numero_serie' : 'CAST(NULL AS VARCHAR(80)) AS numero_serie'},
+      c.descripcion,
+      c.cantidad_stock,
+      c.precio_unitario,
+      c.unidad,
+      c.activo,
+      c.id_ci,
+      ci.nombre_equipo,
+      ci.numero_serie AS ci_numero_serie
+    FROM Componentes_Inventario c
+    LEFT JOIN Elementos_Configuracion ci ON ci.id_ci = c.id_ci
+  `
+}
 
 async function validateIdCiOptional(pool, id_ci) {
   if (!id_ci) return null
@@ -83,15 +90,18 @@ async function loadSolicitudDetalle(pool, id_solicitud) {
     .query(`
       SELECT
         d.id_detalle,
+        d.id_componente_origen,
         d.id_componente,
         d.cantidad,
         d.precio_unitario,
+        c_origen.nombre AS nombre_componente_origen,
         c.nombre AS nombre_componente,
         c.unidad,
         c.id_ci AS componente_id_ci,
         ci_comp.nombre_equipo AS componente_ci_nombre
       FROM Solicitud_Cambio_Detalle d
       JOIN Componentes_Inventario c ON c.id_componente = d.id_componente
+      LEFT JOIN Componentes_Inventario c_origen ON c_origen.id_componente = d.id_componente_origen
       LEFT JOIN Elementos_Configuracion ci_comp ON ci_comp.id_ci = c.id_ci
       WHERE d.id_solicitud = @id_solicitud
     `)
@@ -110,6 +120,7 @@ router.get('/admin/inventario/componentes', ...requireAdmin, async (req, res) =>
     await ensureInventarioSchema(pool)
 
     const request = pool.request()
+    const componentesSelectAdmin = await getComponentesSelectAdmin(pool)
     let where = ''
     if (filterCi) {
       request.input('id_ci', sql.VarChar(50), filterCi)
@@ -117,7 +128,7 @@ router.get('/admin/inventario/componentes', ...requireAdmin, async (req, res) =>
     }
 
     const result = await request.query(`
-      ${COMPONENTES_SELECT_ADMIN}
+      ${componentesSelectAdmin}
       ${where}
       ORDER BY c.nombre
     `)
@@ -131,6 +142,7 @@ router.get('/admin/inventario/componentes', ...requireAdmin, async (req, res) =>
 // POST /api/admin/inventario/componentes
 router.post('/admin/inventario/componentes', ...requireAdmin, async (req, res) => {
   const nombre = toTrimmedString(req.body?.nombre)
+  const numero_serie = toTrimmedString(req.body?.numero_serie) || null
   const descripcion = toTrimmedString(req.body?.descripcion) || null
   const cantidad_stock = Number.parseInt(String(req.body?.cantidad_stock ?? '0'), 10)
   const precio_unitario = parsePrecio(req.body?.precio_unitario)
@@ -154,11 +166,20 @@ router.post('/admin/inventario/componentes', ...requireAdmin, async (req, res) =
     const idCiValid = await validateIdCiOptional(pool, id_ci)
     if (id_ci && idCiValid === false) return res.status(404).json({ message: 'El CI asignado no existe' })
 
+    if (numero_serie) {
+      const dup = await pool
+        .request()
+        .input('numero_serie', sql.VarChar(80), numero_serie)
+        .query(`SELECT 1 AS found FROM Componentes_Inventario WHERE numero_serie = @numero_serie`)
+      if (dup.recordset?.[0]?.found) return res.status(409).json({ message: 'El numero de serie ya existe' })
+    }
+
     const id_componente = await findNextComponenteId(pool.request())
     await pool
       .request()
       .input('id_componente', sql.Char(10), id_componente)
       .input('nombre', sql.VarChar(150), nombre)
+      .input('numero_serie', sql.VarChar(80), numero_serie)
       .input('descripcion', sql.VarChar(500), descripcion)
       .input('cantidad_stock', sql.Int, cantidad_stock)
       .input('precio_unitario', sql.Decimal(10, 2), precio_unitario)
@@ -166,9 +187,9 @@ router.post('/admin/inventario/componentes', ...requireAdmin, async (req, res) =
       .input('id_ci', sql.VarChar(50), idCiValid)
       .query(`
         INSERT INTO Componentes_Inventario (
-          id_componente, nombre, descripcion, cantidad_stock, precio_unitario, unidad, activo, id_ci
+          id_componente, nombre, numero_serie, descripcion, cantidad_stock, precio_unitario, unidad, activo, id_ci
         ) VALUES (
-          @id_componente, @nombre, @descripcion, @cantidad_stock, @precio_unitario, @unidad, 1, @id_ci
+          @id_componente, @nombre, @numero_serie, @descripcion, @cantidad_stock, @precio_unitario, @unidad, 1, @id_ci
         )
       `)
 
@@ -183,6 +204,8 @@ router.post('/admin/inventario/componentes', ...requireAdmin, async (req, res) =
 router.put('/admin/inventario/componentes/:id_componente', ...requireAdmin, async (req, res) => {
   const id_componente = toTrimmedString(req.params?.id_componente)
   const nombre = toTrimmedString(req.body?.nombre)
+  const numero_serie =
+    req.body?.numero_serie !== undefined ? toTrimmedString(req.body.numero_serie) || null : undefined
   const descripcion = toTrimmedString(req.body?.descripcion) || null
   const cantidad_stock =
     req.body?.cantidad_stock !== undefined ? parseCantidad(req.body.cantidad_stock) : null
@@ -214,6 +237,19 @@ router.put('/admin/inventario/componentes/:id_componente', ...requireAdmin, asyn
       const idCiValid = await validateIdCiOptional(pool, id_ci)
       if (id_ci && idCiValid === false) return res.status(404).json({ message: 'El CI asignado no existe' })
     }
+    if (numero_serie !== undefined && numero_serie) {
+      const dup = await pool
+        .request()
+        .input('numero_serie', sql.VarChar(80), numero_serie)
+        .input('id_componente', sql.Char(10), id_componente)
+        .query(`
+          SELECT 1 AS found
+          FROM Componentes_Inventario
+          WHERE numero_serie = @numero_serie
+            AND id_componente <> @id_componente
+        `)
+      if (dup.recordset?.[0]?.found) return res.status(409).json({ message: 'El numero de serie ya existe' })
+    }
 
     const request = pool
       .request()
@@ -222,6 +258,10 @@ router.put('/admin/inventario/componentes/:id_componente', ...requireAdmin, asyn
       .input('descripcion', sql.VarChar(500), descripcion)
 
     let sets = 'nombre = @nombre, descripcion = @descripcion'
+    if (numero_serie !== undefined) {
+      request.input('numero_serie', sql.VarChar(80), numero_serie)
+      sets += ', numero_serie = @numero_serie'
+    }
     if (cantidad_stock !== null) {
       request.input('cantidad_stock', sql.Int, cantidad_stock)
       sets += ', cantidad_stock = @cantidad_stock'
@@ -253,8 +293,8 @@ router.put('/admin/inventario/componentes/:id_componente', ...requireAdmin, asyn
   }
 })
 
-// GET /api/ci/:id_ci/componentes-inventario (admin)
-router.get('/ci/:id_ci/componentes-inventario', ...requireAdmin, async (req, res) => {
+// GET /api/ci/:id_ci/componentes-inventario (admin/tecnico)
+router.get('/ci/:id_ci/componentes-inventario', ...requireAdminOrTecnico, async (req, res) => {
   const id_ci = toTrimmedString(req.params?.id_ci)
   if (!id_ci) return badRequest(res, 'id_ci es obligatorio')
 
@@ -264,11 +304,12 @@ router.get('/ci/:id_ci/componentes-inventario', ...requireAdmin, async (req, res
 
     await ensureInventarioSchema(pool)
 
+    const componentesSelectAdmin = await getComponentesSelectAdmin(pool)
     const result = await pool
       .request()
       .input('id_ci', sql.VarChar(50), id_ci)
       .query(`
-        ${COMPONENTES_SELECT_ADMIN}
+        ${componentesSelectAdmin}
         WHERE c.id_ci = @id_ci
         ORDER BY c.nombre
       `)
@@ -291,6 +332,10 @@ router.get('/inventario/componentes', ...requireTecnico, async (req, res) => {
 
     await ensureInventarioSchema(pool)
 
+    const meta = await pool.request().query(`
+      SELECT CASE WHEN COL_LENGTH('Componentes_Inventario', 'numero_serie') IS NULL THEN 0 ELSE 1 END AS has_numero_serie
+    `)
+    const hasNumeroSerie = Number(meta.recordset?.[0]?.has_numero_serie) === 1
     const result = await pool
       .request()
       .input('id_ci', sql.VarChar(50), id_ci)
@@ -298,6 +343,7 @@ router.get('/inventario/componentes', ...requireTecnico, async (req, res) => {
         SELECT
           c.id_componente,
           c.nombre,
+          ${hasNumeroSerie ? 'c.numero_serie' : 'CAST(NULL AS VARCHAR(80)) AS numero_serie'},
           c.descripcion,
           c.cantidad_stock,
           c.precio_unitario,
@@ -306,12 +352,138 @@ router.get('/inventario/componentes', ...requireTecnico, async (req, res) => {
         FROM Componentes_Inventario c
         WHERE c.activo = 1
           AND c.cantidad_stock > 0
-          AND (c.id_ci IS NULL OR c.id_ci = @id_ci)
+          AND c.id_ci IS NULL
         ORDER BY c.nombre
       `)
     return res.status(200).json(result.recordset)
   } catch (err) {
     console.error('Error en GET /api/inventario/componentes:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+// GET /api/admin/inventario/componentes-agrupados
+router.get('/admin/inventario/componentes-agrupados', ...requireAdmin, async (_req, res) => {
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+    await ensureInventarioSchema(pool)
+
+    const result = await pool.request().query(`
+      SELECT
+        nombre,
+        COUNT(*) AS total_componentes,
+        SUM(CASE WHEN id_ci IS NULL THEN 1 ELSE 0 END) AS en_almacen,
+        SUM(CASE WHEN id_ci IS NOT NULL THEN 1 ELSE 0 END) AS asignados
+      FROM Componentes_Inventario
+      GROUP BY nombre
+      ORDER BY nombre
+    `)
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/admin/inventario/componentes-agrupados:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+// GET /api/admin/inventario/componentes/similares?nombre=...
+router.get('/admin/inventario/componentes/similares', ...requireAdmin, async (req, res) => {
+  const nombre = toTrimmedString(req.query?.nombre)
+  if (!nombre) return badRequest(res, 'nombre es obligatorio')
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+    await ensureInventarioSchema(pool)
+    const componentesSelectAdmin = await getComponentesSelectAdmin(pool)
+    const result = await pool.request().input('nombre', sql.VarChar(150), nombre).query(`
+      ${componentesSelectAdmin}
+      WHERE c.nombre = @nombre
+      ORDER BY c.numero_serie, c.id_componente
+    `)
+    return res.status(200).json(result.recordset)
+  } catch (err) {
+    console.error('Error en GET /api/admin/inventario/componentes/similares:', err)
+    return res.status(500).json({ message: 'Error interno del servidor' })
+  }
+})
+
+// GET /api/admin/inventario/componentes/:id_componente/historial-ci
+router.get('/admin/inventario/componentes/:id_componente/historial-ci', ...requireAdmin, async (req, res) => {
+  const id_componente = toTrimmedString(req.params?.id_componente)
+  if (!id_componente) return badRequest(res, 'id_componente es obligatorio')
+  try {
+    const pool = await getPool()
+    if (!pool) return res.status(500).json({ message: 'Backend sin configuración de BD' })
+    await ensureInventarioSchema(pool)
+    const metaFecha = await pool.request().query(`
+      SELECT CASE WHEN COL_LENGTH('Componentes_Inventario', 'fecha_registro') IS NULL THEN 0 ELSE 1 END AS has_fecha_registro
+    `)
+    const hasFechaRegistro = Number(metaFecha.recordset?.[0]?.has_fecha_registro) === 1
+
+    const actual = await pool.request().input('id_componente', sql.Char(10), id_componente).query(`
+      SELECT
+        c.id_componente,
+        c.nombre,
+        c.numero_serie,
+        ${hasFechaRegistro ? 'c.fecha_registro' : 'CAST(NULL AS DATETIME) AS fecha_registro'},
+        c.id_ci,
+        ci.nombre_equipo
+      FROM Componentes_Inventario c
+      LEFT JOIN Elementos_Configuracion ci ON ci.id_ci = c.id_ci
+      WHERE c.id_componente = @id_componente
+    `)
+    const row = actual.recordset?.[0]
+    if (!row) return res.status(404).json({ message: 'Componente no encontrado' })
+
+    const eventos = await pool.request().input('id_componente', sql.Char(10), id_componente).query(`
+      SELECT
+        CAST(NULL AS VARCHAR(25)) AS numero_rfc,
+        ${hasFechaRegistro ? 'c.fecha_registro' : 'CAST(NULL AS DATETIME)'} AS fecha_evento,
+        c.id_ci,
+        'Instalado' AS tipo_evento,
+        CAST('Alta inicial de componente' AS VARCHAR(500)) AS detalle_cambio
+      FROM Componentes_Inventario c
+      WHERE c.id_componente = @id_componente
+        AND c.id_ci IS NOT NULL
+
+      UNION ALL
+
+      SELECT
+        s.numero_rfc,
+        s.fecha_resolucion AS fecha_evento,
+        s.id_ci,
+        'Instalado' AS tipo_evento,
+        s.detalle_cambio
+      FROM Solicitud_Cambio_Detalle d
+      JOIN Solicitud_Cambio_Componente s ON s.id_solicitud = d.id_solicitud
+      WHERE d.id_componente = @id_componente
+        AND s.estado = '${SOLICITUD_ESTADO_APROBADA}'
+
+      UNION ALL
+
+      SELECT
+        s.numero_rfc,
+        s.fecha_resolucion AS fecha_evento,
+        s.id_ci,
+        'Retirado' AS tipo_evento,
+        s.detalle_cambio
+      FROM Solicitud_Cambio_Detalle d
+      JOIN Solicitud_Cambio_Componente s ON s.id_solicitud = d.id_solicitud
+      WHERE d.id_componente_origen = @id_componente
+        AND s.estado = '${SOLICITUD_ESTADO_APROBADA}'
+
+      ORDER BY fecha_evento DESC
+    `)
+
+    return res.status(200).json({
+      actual: {
+        ...row,
+        ubicacion_actual: row.id_ci ? (row.nombre_equipo || row.id_ci) : 'Almacen',
+      },
+      historial: eventos.recordset || [],
+    })
+  } catch (err) {
+    console.error('Error en GET /api/admin/inventario/componentes/:id_componente/historial-ci:', err)
     return res.status(500).json({ message: 'Error interno del servidor' })
   }
 })
@@ -398,17 +570,24 @@ router.post('/ci/:id_ci/solicitudes-cambio', ...requireTecnico, async (req, res)
     let requiere_institucion = false
 
     for (const raw of lineas) {
+      const id_componente_origen = toTrimmedString(raw?.id_componente_origen) || null
       const id_componente = toTrimmedString(raw?.id_componente)
       const cantidad = parseCantidad(raw?.cantidad)
       if (!id_componente || Number.isNaN(cantidad)) {
         return badRequest(res, 'Cada linea requiere id_componente y cantidad valida')
+      }
+      if (!id_componente_origen) {
+        return badRequest(res, 'Cada linea requiere id_componente_origen (componente cambiado)')
+      }
+      if (id_componente_origen === id_componente) {
+        return badRequest(res, 'El componente de reemplazo no puede ser el mismo que el componente cambiado')
       }
 
       const comp = await pool
         .request()
         .input('id_componente', sql.Char(10), id_componente)
         .query(`
-          SELECT id_componente, cantidad_stock, precio_unitario, activo, id_ci
+          SELECT id_componente, nombre, numero_serie, cantidad_stock, precio_unitario, activo, id_ci
           FROM Componentes_Inventario
           WHERE id_componente = @id_componente
         `)
@@ -416,11 +595,53 @@ router.post('/ci/:id_ci/solicitudes-cambio', ...requireTecnico, async (req, res)
       const row = comp.recordset?.[0]
       if (!row || !row.activo) return badRequest(res, `Componente ${id_componente} no disponible`)
 
-      const compIdCi = toTrimmedString(row.id_ci) || null
-      if (compIdCi && compIdCi !== id_ci) {
+      const compOrigen = await pool
+        .request()
+        .input('id_componente_origen', sql.Char(10), id_componente_origen)
+        .input('id_ci', sql.VarChar(50), id_ci)
+        .query(`
+          SELECT id_componente, nombre, numero_serie
+          FROM Componentes_Inventario
+          WHERE id_componente = @id_componente_origen
+            AND id_ci = @id_ci
+        `)
+      const rowOrigen = compOrigen.recordset?.[0]
+      if (!rowOrigen) {
         return badRequest(
           res,
-          `El componente ${id_componente} esta asignado a otro CI y no puede usarse en esta solicitud`
+          `El componente cambiado ${id_componente_origen} no esta asignado al CI ${id_ci}`
+        )
+      }
+
+      const nombreOrigen = toTrimmedString(rowOrigen.nombre)
+      const nombreNuevo = toTrimmedString(row.nombre)
+      if (nombreOrigen !== nombreNuevo) {
+        return badRequest(
+          res,
+          `El reemplazo ${id_componente} debe ser del mismo tipo de componente que ${id_componente_origen}`
+        )
+      }
+
+      const serieOrigen = toTrimmedString(rowOrigen.numero_serie)
+      const serieNueva = toTrimmedString(row.numero_serie)
+      if (!serieOrigen || !serieNueva) {
+        return badRequest(
+          res,
+          'Ambos componentes (cambiado y reemplazo) deben tener numero de serie para validar el cambio'
+        )
+      }
+      if (serieOrigen === serieNueva) {
+        return badRequest(
+          res,
+          `El reemplazo ${id_componente} no puede tener el mismo numero de serie que el componente cambiado`
+        )
+      }
+
+      const compIdCi = toTrimmedString(row.id_ci) || null
+      if (compIdCi) {
+        return badRequest(
+          res,
+          `El componente ${id_componente} no esta en almacen y no puede usarse en esta solicitud`
         )
       }
 
@@ -431,7 +652,12 @@ router.post('/ci/:id_ci/solicitudes-cambio', ...requireTecnico, async (req, res)
       const precio = Number(row.precio_unitario)
       if (precio >= MONTO_LIMITE_INSTITUCION_MXN) requiere_institucion = true
       monto_total += precio * cantidad
-      lineasNormalizadas.push({ id_componente, cantidad, precio_unitario: precio })
+      lineasNormalizadas.push({
+        id_componente_origen,
+        id_componente,
+        cantidad,
+        precio_unitario: precio,
+      })
     }
 
     const estadoInicial = requiere_institucion
@@ -467,12 +693,15 @@ router.post('/ci/:id_ci/solicitudes-cambio', ...requireTecnico, async (req, res)
       for (const linea of lineasNormalizadas) {
         await new sql.Request(transaction)
           .input('id_solicitud', sql.Char(12), id_solicitud)
+          .input('id_componente_origen', sql.Char(10), linea.id_componente_origen)
           .input('id_componente', sql.Char(10), linea.id_componente)
           .input('cantidad', sql.Int, linea.cantidad)
           .input('precio_unitario', sql.Decimal(10, 2), linea.precio_unitario)
           .query(`
-            INSERT INTO Solicitud_Cambio_Detalle (id_solicitud, id_componente, cantidad, precio_unitario)
-            VALUES (@id_solicitud, @id_componente, @cantidad, @precio_unitario)
+            INSERT INTO Solicitud_Cambio_Detalle (
+              id_solicitud, id_componente_origen, id_componente, cantidad, precio_unitario
+            )
+            VALUES (@id_solicitud, @id_componente_origen, @id_componente, @cantidad, @precio_unitario)
           `)
       }
 
@@ -687,6 +916,18 @@ router.post('/admin/solicitudes-cambio/:id_solicitud/aprobar', ...requireAdmin, 
     await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE)
     try {
       for (const linea of solicitud.lineas) {
+        if (toTrimmedString(linea.id_componente_origen)) {
+          await new sql.Request(transaction)
+            .input('id_componente_origen', sql.Char(10), linea.id_componente_origen)
+            .input('id_ci', sql.VarChar(50), solicitud.id_ci)
+            .query(`
+              UPDATE Componentes_Inventario
+              SET id_ci = NULL
+              WHERE id_componente = @id_componente_origen
+                AND id_ci = @id_ci
+            `)
+        }
+
         const stockRes = await new sql.Request(transaction)
           .input('id_componente', sql.Char(10), linea.id_componente)
           .input('cantidad', sql.Int, linea.cantidad)
@@ -704,6 +945,15 @@ router.post('/admin/solicitudes-cambio/:id_solicitud/aprobar', ...requireAdmin, 
             message: `Stock insuficiente para ${linea.nombre_componente || linea.id_componente}`,
           })
         }
+
+        await new sql.Request(transaction)
+          .input('id_componente', sql.Char(10), linea.id_componente)
+          .input('id_ci', sql.VarChar(50), solicitud.id_ci)
+          .query(`
+            UPDATE Componentes_Inventario
+            SET id_ci = @id_ci
+            WHERE id_componente = @id_componente
+          `)
       }
 
       const historialRes = await new sql.Request(transaction)
